@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 DEFAULT_REPO_ID = "ruilin.wang/ExRoMa-Assets"
@@ -35,16 +34,17 @@ def main() -> int:
     folder = args.folder.expanduser().resolve()
     if not folder.is_dir():
         raise FileNotFoundError(f"Asset folder does not exist: {folder}")
-    if not os.environ.get("MODELSCOPE_API_TOKEN"):
-        raise RuntimeError(
-            "MODELSCOPE_API_TOKEN is not set. Create an Access Token on ModelScope, "
-            "then export it before running this command."
-        )
-
     from modelscope_hub import HubApi
 
     api = HubApi(endpoint=MODELSCOPE_ENDPOINT)
-    user = api.whoami()
+    try:
+        user = api.whoami()
+    except Exception as exc:
+        raise RuntimeError(
+            "ModelScope authentication is unavailable. Run "
+            "'modelscope-hub --endpoint https://www.modelscope.ai login' or set "
+            "MODELSCOPE_API_TOKEN before publishing."
+        ) from exc
     print(f"Authenticated to ModelScope as {user.username}", flush=True)
     result = api.upload_folder(
         repo_id=args.repo_id,
