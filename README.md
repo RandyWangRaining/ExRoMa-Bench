@@ -160,14 +160,6 @@ Download the external bundle from ModelScope:
 exroma assets pull
 ```
 
-The former Hugging Face location remains available as an explicit fallback:
-
-```bash
-exroma assets pull \
-  --provider huggingface \
-  --repo-id wrl2003/ExRoMa-Assets
-```
-
 During local migration, select an existing bundle without copying it:
 
 ```bash

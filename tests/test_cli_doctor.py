@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from exroma_bench import cli
 
 
@@ -32,3 +33,10 @@ def test_doctor_rejects_missing_curobo(monkeypatch, tmp_path: Path) -> None:
     )
 
     assert cli._doctor() == 1
+
+
+def test_assets_rejects_removed_provider_option() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["assets", "pull", "--provider", "legacy"])
+
+    assert exc_info.value.code == 2

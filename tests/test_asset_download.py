@@ -8,7 +8,7 @@ import pytest
 from exroma_bench import assets
 
 
-def test_modelscope_is_the_default_asset_provider(monkeypatch, tmp_path: Path) -> None:
+def test_modelscope_downloads_the_asset_bundle(monkeypatch, tmp_path: Path) -> None:
     calls = {}
     module = ModuleType("modelscope_hub")
 
@@ -35,30 +35,6 @@ def test_modelscope_is_the_default_asset_provider(monkeypatch, tmp_path: Path) -
             "local_dir": tmp_path.resolve(),
         },
     }
-
-
-def test_huggingface_remains_available_as_a_fallback(monkeypatch, tmp_path: Path) -> None:
-    calls = {}
-    module = ModuleType("huggingface_hub")
-
-    def fake_snapshot_download(**kwargs):
-        calls.update(kwargs)
-        return kwargs["local_dir"]
-
-    module.snapshot_download = fake_snapshot_download
-    monkeypatch.setitem(sys.modules, "huggingface_hub", module)
-    monkeypatch.setattr(assets, "verify_assets", lambda _root: [])
-
-    destination = assets.pull_assets(provider="huggingface", root=tmp_path)
-
-    assert destination == tmp_path.resolve()
-    assert calls == {
-        "repo_id": "wrl2003/ExRoMa-Assets",
-        "repo_type": "model",
-        "local_dir": tmp_path.resolve(),
-    }
-
-
 def test_incomplete_download_is_rejected(monkeypatch, tmp_path: Path) -> None:
     module = ModuleType("modelscope_hub")
 

@@ -7,12 +7,8 @@ from pathlib import Path
 
 from .paths import PROJECT_ROOT, asset_root
 
-DEFAULT_PROVIDER = "modelscope"
 MODELSCOPE_ENDPOINT = "https://www.modelscope.ai"
-DEFAULT_REPO_IDS = {
-    "modelscope": "ruilin.wang/ExRoMa-Assets",
-    "huggingface": "wrl2003/ExRoMa-Assets",
-}
+DEFAULT_REPO_ID = "ruilin.wang/ExRoMa-Assets"
 MANIFEST_PATH = PROJECT_ROOT / "assets" / "manifest.json"
 
 
@@ -41,53 +37,34 @@ def link_assets(source: Path) -> Path:
 def pull_assets(
     *,
     repo_id: str | None = None,
-    provider: str = DEFAULT_PROVIDER,
     root: Path | None = None,
 ) -> Path:
-    if provider not in DEFAULT_REPO_IDS:
-        raise ValueError(f"Unsupported asset provider: {provider}")
-
-    repo_id = repo_id or DEFAULT_REPO_IDS[provider]
+    repo_id = repo_id or DEFAULT_REPO_ID
     destination = (root or asset_root()).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
 
-    if provider == "modelscope":
-        try:
-            from modelscope_hub import HubApi
-        except ImportError as exc:
-            raise RuntimeError(
-                "modelscope-hub is required. Install ExRoMa's compatible requirements."
-            ) from exc
-        api = HubApi(endpoint=MODELSCOPE_ENDPOINT)
-        downloaded = Path(
-            api.download_repo(
-                repo_id=repo_id,
-                repo_type="dataset",
-                local_dir=destination,
-            )
-        ).resolve()
-        for missing_path in verify_assets(downloaded):
-            api.download_file(
-                repo_id=repo_id,
-                repo_type="dataset",
-                file_path=missing_path.relative_to(downloaded).as_posix(),
-                local_dir=downloaded,
-                force=True,
-            )
-    else:
-        try:
-            from huggingface_hub import snapshot_download
-        except ImportError as exc:
-            raise RuntimeError(
-                "huggingface-hub is required. Install ExRoMa's compatible requirements."
-            ) from exc
-        downloaded = Path(
-            snapshot_download(
-                repo_id=repo_id,
-                repo_type="model",
-                local_dir=destination,
-            )
-        ).resolve()
+    try:
+        from modelscope_hub import HubApi
+    except ImportError as exc:
+        raise RuntimeError(
+            "modelscope-hub is required. Install ExRoMa's compatible requirements."
+        ) from exc
+    api = HubApi(endpoint=MODELSCOPE_ENDPOINT)
+    downloaded = Path(
+        api.download_repo(
+            repo_id=repo_id,
+            repo_type="dataset",
+            local_dir=destination,
+        )
+    ).resolve()
+    for missing_path in verify_assets(downloaded):
+        api.download_file(
+            repo_id=repo_id,
+            repo_type="dataset",
+            file_path=missing_path.relative_to(downloaded).as_posix(),
+            local_dir=downloaded,
+            force=True,
+        )
 
     missing = verify_assets(downloaded)
     if missing:

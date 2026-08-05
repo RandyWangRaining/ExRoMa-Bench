@@ -2,7 +2,6 @@
 click==8.1.7
 coverage==7.4.4
 h5py>=3.10,<4
-huggingface-hub==0.36.2
 modelscope-hub==0.2.0
 numpy==1.26.0
 opencv-python-headless>=4.9,<5

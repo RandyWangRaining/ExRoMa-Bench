@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .assets import DEFAULT_PROVIDER, DEFAULT_REPO_IDS, link_assets, pull_assets, verify_assets
+from .assets import link_assets, pull_assets, verify_assets
 from .paths import PROJECT_ROOT, asset_root, isaaclab_root
 
 SIM_COMMANDS = {"preview", "collect", "evaluate"}
@@ -21,7 +21,6 @@ def _asset_parser(subparsers) -> None:
     assets = subparsers.add_parser("assets", help="Manage the external asset bundle.")
     commands = assets.add_subparsers(dest="asset_command", required=True)
     pull = commands.add_parser("pull", help="Download the external asset bundle.")
-    pull.add_argument("--provider", choices=tuple(DEFAULT_REPO_IDS), default=DEFAULT_PROVIDER)
     pull.add_argument("--repo-id")
     pull.add_argument("--root", type=Path)
     link = commands.add_parser("link", help="Use an existing local asset directory.")
@@ -95,10 +94,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args, passthrough = parser.parse_known_args(argv)
     if args.command == "assets":
+        if passthrough:
+            parser.error(f"unrecognized arguments: {' '.join(passthrough)}")
         if args.asset_command == "pull":
             destination = pull_assets(
                 repo_id=args.repo_id,
-                provider=args.provider,
                 root=args.root,
             )
             print(destination)
