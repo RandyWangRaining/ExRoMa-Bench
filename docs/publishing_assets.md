@@ -12,8 +12,8 @@ the interactive prompt so the token is not placed in shell history:
 
 ```bash
 conda activate openspace
-modelscope-hub --endpoint https://www.modelscope.ai login
-modelscope-hub --endpoint https://www.modelscope.ai whoami
+modelscope-hub --endpoint https://modelscope.cn login
+modelscope-hub --endpoint https://modelscope.cn whoami
 ```
 
 The login command persists the resulting credentials under

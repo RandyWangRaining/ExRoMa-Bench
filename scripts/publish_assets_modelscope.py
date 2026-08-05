@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 
 DEFAULT_REPO_ID = "ruilin.wang/ExRoMa-Assets"
-MODELSCOPE_ENDPOINT = "https://www.modelscope.ai"
+MODELSCOPE_ENDPOINT = "https://modelscope.cn"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,7 +42,7 @@ def main() -> int:
     except Exception as exc:
         raise RuntimeError(
             "ModelScope authentication is unavailable. Run "
-            "'modelscope-hub --endpoint https://www.modelscope.ai login' or set "
+            "'modelscope-hub --endpoint https://modelscope.cn login' or set "
             "MODELSCOPE_API_TOKEN before publishing."
         ) from exc
     print(f"Authenticated to ModelScope as {user.username}", flush=True)
