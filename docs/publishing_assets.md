@@ -7,19 +7,21 @@ upload can continue without restarting completed files.
 
 ## 1. Prepare an access token
 
-Create an Access Token in the ModelScope account settings. Authenticate through
-the interactive prompt so the token is not placed in shell history:
+Create an Access Token in the ModelScope account settings. Load it without
+placing the token itself in shell history:
 
 ```bash
-conda activate openspace
-modelscope-hub --endpoint https://modelscope.cn login
-modelscope-hub --endpoint https://modelscope.cn whoami
+conda activate exroma
+read -rsp "ModelScope token: " MODELSCOPE_API_TOKEN
+echo
+export MODELSCOPE_API_TOKEN
+export MODELSCOPE_ENDPOINT=https://www.modelscope.ai
+modelscope-hub --endpoint "$MODELSCOPE_ENDPOINT" whoami
 ```
 
-The login command persists the resulting credentials under
-`~/.modelscope/credentials/`. Alternatively, expose
-`MODELSCOPE_API_TOKEN` only to the current process environment. Never write the
-token into this repository, `.env`, or a command-line argument.
+The ExRoMa asset dataset is hosted on the international `.ai` site, whose API
+token is distinct from a China-site AccessToken. Never write the token into
+this repository, `.env`, or a command-line argument.
 
 ## 2. Install the upload client
 
@@ -68,8 +70,7 @@ exroma assets pull --root /tmp/exroma-assets-modelscope-check
 EXROMA_ASSET_ROOT=/tmp/exroma-assets-modelscope-check exroma assets verify
 ```
 
-If an environment variable was used instead of the login command, remove it
-from the current shell after verification:
+Remove the token and endpoint from the current shell after verification:
 
 ```bash
 unset MODELSCOPE_API_TOKEN

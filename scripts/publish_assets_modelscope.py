@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 DEFAULT_REPO_ID = "ruilin.wang/ExRoMa-Assets"
-MODELSCOPE_ENDPOINT = "https://modelscope.cn"
+DEFAULT_MODELSCOPE_ENDPOINT = "https://www.modelscope.ai"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,6 +16,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("folder", type=Path, help="Local ExRoMa-Assets directory.")
     parser.add_argument("--repo-id", default=DEFAULT_REPO_ID)
     parser.add_argument("--revision", default="master")
+    parser.add_argument(
+        "--endpoint",
+        default=os.environ.get("MODELSCOPE_ENDPOINT", DEFAULT_MODELSCOPE_ENDPOINT),
+    )
     parser.add_argument("--max-workers", type=int, default=4)
     parser.add_argument(
         "--allow-pattern",
@@ -36,14 +41,14 @@ def main() -> int:
         raise FileNotFoundError(f"Asset folder does not exist: {folder}")
     from modelscope_hub import HubApi
 
-    api = HubApi(endpoint=MODELSCOPE_ENDPOINT)
+    api = HubApi(endpoint=args.endpoint)
     try:
         user = api.whoami()
     except Exception as exc:
         raise RuntimeError(
             "ModelScope authentication is unavailable. Run "
-            "'modelscope-hub --endpoint https://modelscope.cn login' or set "
-            "MODELSCOPE_API_TOKEN before publishing."
+            "the publisher with MODELSCOPE_API_TOKEN set to a valid token for "
+            f"{args.endpoint}."
         ) from exc
     print(f"Authenticated to ModelScope as {user.username}", flush=True)
     result = api.upload_folder(
