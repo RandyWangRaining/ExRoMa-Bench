@@ -1,0 +1,92 @@
+collision_spheres:
+  fl_base_link:
+    - center: [-0.009, 0.000, 0.043]
+      radius: 0.052
+  fl_link1:
+    - center: [-0.002, 0.000, -0.006]
+      radius: 0.045
+  fl_link2:
+    - center: [0.020, 0.009, 0.000]
+      radius: 0.055
+    - center: [0.080, 0.009, 0.000]
+      radius: 0.055
+    - center: [0.140, 0.009, 0.000]
+      radius: 0.055
+    - center: [0.200, 0.009, 0.000]
+      radius: 0.055
+    - center: [0.260, 0.009, 0.000]
+      radius: 0.055
+    - center: [0.310, 0.009, 0.000]
+      radius: 0.052
+  fl_link3:
+    - center: [-0.185, 0.050, 0.000]
+      radius: 0.055
+    - center: [-0.135, 0.042, 0.000]
+      radius: 0.055
+    - center: [-0.085, 0.033, 0.000]
+      radius: 0.055
+    - center: [-0.035, 0.025, 0.000]
+      radius: 0.055
+  fl_link4:
+    - center: [0.001, -0.003, -0.004]
+      radius: 0.045
+  fl_link5:
+    - center: [0.000, 0.005, 0.000]
+      radius: 0.041
+    - center: [0.000, 0.045, 0.000]
+      radius: 0.041
+    - center: [0.000, 0.085, 0.000]
+      radius: 0.041
+  fl_link6:
+    - center: [-0.050, 0.030, 0.032]
+      radius: 0.041
+    - center: [0.000, 0.030, 0.032]
+      radius: 0.041
+    - center: [0.050, 0.030, 0.032]
+      radius: 0.041
+
+  fr_base_link:
+    - center: [-0.009, 0.000, 0.043]
+      radius: 0.052
+  fr_link1:
+    - center: [-0.002, 0.000, -0.006]
+      radius: 0.045
+  fr_link2:
+    - center: [0.020, 0.009, 0.000]
+      radius: 0.055
+    - center: [0.080, 0.009, 0.000]
+      radius: 0.055
+    - center: [0.140, 0.009, 0.000]
+      radius: 0.055
+    - center: [0.200, 0.009, 0.000]
+      radius: 0.055
+    - center: [0.260, 0.009, 0.000]
+      radius: 0.055
+    - center: [0.310, 0.009, 0.000]
+      radius: 0.052
+  fr_link3:
+    - center: [-0.185, 0.050, 0.000]
+      radius: 0.055
+    - center: [-0.135, 0.042, 0.000]
+      radius: 0.055
+    - center: [-0.085, 0.033, 0.000]
+      radius: 0.055
+    - center: [-0.035, 0.025, 0.000]
+      radius: 0.055
+  fr_link4:
+    - center: [0.001, -0.003, -0.004]
+      radius: 0.045
+  fr_link5:
+    - center: [0.000, 0.005, 0.000]
+      radius: 0.041
+    - center: [0.000, 0.045, 0.000]
+      radius: 0.041
+    - center: [0.000, 0.085, 0.000]
+      radius: 0.041
+  fr_link6:
+    - center: [-0.050, 0.030, 0.032]
+      radius: 0.041
+    - center: [0.000, 0.030, 0.032]
+      radius: 0.041
+    - center: [0.050, 0.030, 0.032]
+      radius: 0.041

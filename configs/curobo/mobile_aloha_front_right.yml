@@ -1,0 +1,38 @@
+robot_cfg:
+  kinematics:
+    use_usd_kinematics: false
+    urdf_path: @ASSET_ROOT@/urdf/robots/mobile_aloha/mobile_aloha_import.urdf
+    asset_root_path: @ASSET_ROOT@/urdf/robots/mobile_aloha
+    base_link: footprint
+    ee_link: fr_grasp_frame
+    link_names: [fr_link6, fr_grasp_frame]
+    extra_links:
+      fr_grasp_frame:
+        parent_link_name: fr_link6
+        link_name: fr_grasp_frame
+        fixed_transform: [0.0, 0.0, 0.102, 1.0, 0.0, 0.0, 0.0]
+        joint_type: FIXED
+        joint_name: fr_grasp_frame_joint
+    collision_link_names:
+      [fr_base_link, fr_link1, fr_link2, fr_link3, fr_link4, fr_link5, fr_link6]
+    collision_spheres: @PROJECT_ROOT@/configs/curobo/mobile_aloha_collision_spheres.yml
+    collision_sphere_buffer: 0.003
+    self_collision_ignore:
+      fr_base_link: [fr_link1, fr_link2]
+      fr_link1: [fr_link2, fr_link3]
+      fr_link2: [fr_link3, fr_link4]
+      fr_link3: [fr_link4, fr_link5]
+      fr_link4: [fr_link5, fr_link6]
+      fr_link5: [fr_link6]
+    self_collision_buffer: {}
+    use_global_cumul: true
+    mesh_link_names: null
+    lock_joints: null
+    cspace:
+      joint_names: [fr_joint1, fr_joint2, fr_joint3, fr_joint4, fr_joint5, fr_joint6]
+      retract_config: [0.10, 0.929, -1.267, 0.0, 0.950, 0.050]
+      null_space_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+      cspace_distance_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+      velocity_scale: 0.5
+      max_acceleration: 4.0
+      max_jerk: 80.0

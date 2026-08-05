@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "repository": "ruilin.wang/ExRoMa-Assets",
+  "repository_provider": "modelscope",
+  "required_paths": [
+    "usd/robots/pragyan/pragyan.usdz",
+    "usd/robots/dual_piper/dual_piper_module.usd",
+    "usd/robots/dual_piper/configuration/dual_piper_module_base.usd",
+    "usd/robots/dual_piper/configuration/dual_piper_module_physics.usd",
+    "urdf/robots/dual_piper/dual_piper_module.urdf",
+    "urdf/robots/dual_piper/meshes/base_link.STL",
+    "usd/scenery/lunalab.usdc",
+    "usd/scenery/oberpfaffenhofen_test_site.usdc",
+    "usd/backgrounds/nasa_habitat_demonstration_unit/habitat_part_1.usdc",
+    "usd/backgrounds/nasa_habitat_demonstration_unit/habitat_part_2.usdc",
+    "usd/terrain/procedural_moon/moon_surface0.usdz",
+    "usd/terrain/procedural_mars/mars_surface0.usdz",
+    "usd/robotwin/020_hammer/hammer.usd",
+    "usd/robotwin/024_scanner/base0.usdc",
+    "usd/robotwin/112_tea-box/base0.usdc",
+    "usd/rocks/omnilrs/rock4057.usdz",
+    "textures/skydome/stars.exr",
+    "textures/skydome/mars_sky.exr",
+    "textures/skydome/cloudy_sky.exr",
+    "textures/robotwin_lunar/Sand_BaseColor.png",
+    "textures/robotwin_lunar/Sand_Normal.png",
+    "textures/robotwin_lunar/Sand_ORM.png"
+  ],
+  "licenses": {
+    "space_robotics_bench_assets": "MIT OR Apache-2.0; see THIRD_PARTY_NOTICES.md",
+    "robotwin_assets": "See upstream RoboTwin asset terms",
+    "omnilrs_textures": "BSD-3-Clause",
+    "nasa_assets": "NASA Media Usage Guidelines"
+  }
+}

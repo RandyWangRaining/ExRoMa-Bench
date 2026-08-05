@@ -1,0 +1,630 @@
+"""Simulation collection and evaluation entry point."""
+
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+import json
+from pathlib import Path
+import random
+import sys
+import traceback
+
+from isaaclab.app import AppLauncher
+
+from exroma_bench.paths import PROJECT_ROOT
+from exroma_bench.tasks.benchmark_suite.registry import BENCHMARK_TASKS
+
+
+TASKS = tuple(BENCHMARK_TASKS)
+SCENES = (
+    "ground_plane",
+    "lunalab",
+    "moon_surface",
+    "mars_surface",
+    "procedural_moon",
+    "procedural_mars",
+    "oberpfaffenhofen",
+)
+ROBOTTWIN_TASKS = {"stack_blocks_two", "handover_block", "scan_object", "scan_rock"}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=("preview", "collect", "evaluate"))
+    parser.add_argument("--task", choices=TASKS, default="stack_blocks_two")
+    parser.add_argument("--scene", choices=SCENES, default="procedural_moon")
+    parser.add_argument("--attempts", type=int, default=100)
+    parser.add_argument("--episodes", type=int, default=100)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--terrain-seed",
+        type=int,
+        default=0,
+        help="SimForge terrain seed; independent from task randomization.",
+    )
+    parser.add_argument(
+        "--terrain-size",
+        type=float,
+        default=32.0,
+        help="Width and length in metres for procedural SimForge terrain.",
+    )
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--material", choices=("lunar", "original"), default="lunar")
+    parser.add_argument("--strict-collision-check", action="store_true")
+    parser.add_argument("--max-steps", type=int)
+    parser.add_argument("--record-fps", type=float, default=10.0)
+    parser.add_argument("--jpeg-quality", type=int, default=90)
+    parser.add_argument("--no-video", action="store_true")
+    AppLauncher.add_app_launcher_args(parser)
+    return parser
+
+
+def _preload_curobo() -> None:
+    import torch as _torch  # noqa: F401
+    from curobo.curobolib import (  # noqa: F401
+        geom_cu as _geom_cu,
+        kinematics_fused_cu as _kinematics_fused_cu,
+        lbfgs_step_cu as _lbfgs_step_cu,
+        line_search_cu as _line_search_cu,
+        tensor_step_cu as _tensor_step_cu,
+    )
+
+    print("[EXROMA][CUROBO]: CUDA extensions preloaded", flush=True)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    if args.attempts <= 0 or args.episodes <= 0:
+        parser.error("--attempts and --episodes must be positive")
+    if args.terrain_size <= 0.0:
+        parser.error("--terrain-size must be positive")
+    automatic = args.command in {"collect", "evaluate"}
+    if automatic:
+        _preload_curobo()
+    if args.command == "collect":
+        args.enable_cameras = True
+    # AppLauncher receives the parsed namespace directly. Keep ExRoMa's positional
+    # command and task arguments away from Kit's own command-line parser.
+    sys.argv = [sys.argv[0]]
+    app_launcher = AppLauncher(args)
+    simulation_app = app_launcher.app
+    try:
+        result = _run(args, simulation_app)
+        print("[EXROMA]: runtime loop finished", flush=True)
+        return result
+    except BaseException:
+        print("[EXROMA][ERROR]: runtime failed", flush=True)
+        traceback.print_exc()
+        raise
+    finally:
+        print("[EXROMA]: closing Isaac Sim", flush=True)
+        simulation_app.close(
+            wait_for_replicator=not args.headless,
+            skip_cleanup=bool(args.headless),
+        )
+
+
+def _run(args, simulation_app) -> int:
+    print("[EXROMA]: loading Isaac Lab runtime modules", flush=True)
+    import torch
+    import isaaclab.sim as sim_utils
+    from isaaclab.scene import InteractiveScene
+    from isaaclab.sim import SimulationContext
+    from isaacsim.core.utils.stage import get_current_stage
+    from pxr import Usd, UsdGeom, UsdPhysics
+
+    from exroma_bench.tasks.benchmark_suite import apply_benchmark_materials
+
+    from .assembly import assemble_dual_piper
+    from .base_approach import BasePoseApproachController
+    from .domains import domain_for_scene
+    from .rover_drive import PragyanDrive
+    from .scene_alignment import snap_roots_to_terrain
+    from .scene import (
+        TABLE_HEIGHT,
+        TABLE_LENGTH,
+        TABLE_WIDTH,
+        TABLE_X,
+        TABLE_Y,
+        build_scene_cfg,
+        ensure_terrain_collisions,
+    )
+    print("[EXROMA]: building simulation context", flush=True)
+    domain = domain_for_scene(args.scene)
+    task_goal_y = {
+        "stack_blocks_two": -0.10,
+        "beat_block_hammer": -0.05,
+    }
+    goal_y = task_goal_y.get(args.task, 0.05)
+    robot_start_y = goal_y + 0.60
+    sim_cfg = sim_utils.SimulationCfg(
+        device=args.device,
+        dt=0.02,
+        render_interval=2,
+        gravity=(0.0, 0.0, -domain.gravity),
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            restitution=0.0,
+            friction_combine_mode="multiply",
+            restitution_combine_mode="multiply",
+        ),
+        render=sim_utils.RenderCfg(
+            enable_translucency=True,
+            enable_reflections=True,
+        ),
+    )
+    sim = SimulationContext(sim_cfg)
+    sim.set_camera_view((2.4, 2.2, 1.8), (0.0, -0.35, 0.5))
+    print("[EXROMA]: composing scene configuration", flush=True)
+    scene_cfg = build_scene_cfg(
+        scene_name=args.scene,
+        task_name=args.task,
+        robot_start_y=robot_start_y,
+        spacing=args.terrain_size,
+        material_style=args.material,
+        enable_cameras=args.command == "collect",
+        terrain_seed=args.terrain_seed,
+    )
+    if args.command in {"collect", "evaluate"}:
+        scene_cfg.dual_piper.actuators["arms"].effort_limit_sim = 100.0
+        scene_cfg.dual_piper.actuators["arms"].stiffness = 160.0
+        scene_cfg.dual_piper.actuators["arms"].damping = 16.0
+        scene_cfg.dual_piper.actuators["grippers"].stiffness = 220.0
+        scene_cfg.dual_piper.actuators["grippers"].damping = 30.0
+        scene_cfg.dual_piper.actuators["grippers"].velocity_limit_sim = 0.08
+    scene = InteractiveScene(scene_cfg)
+    if args.scene == "ground_plane":
+        terrain_meshes, collision_apis_added = 0, 0
+    else:
+        terrain_meshes, collision_apis_added = ensure_terrain_collisions(
+            get_current_stage(), "/World/envs/env_0/terrain"
+        )
+    print(
+        f"[EXROMA]: terrain meshes={terrain_meshes}, "
+        f"collision APIs added={collision_apis_added}",
+        flush=True,
+    )
+    terrain_source = (
+        "simforge_foundry"
+        if args.scene in {"procedural_moon", "procedural_mars"}
+        else "external_asset"
+    )
+    print(
+        f"[EXROMA]: terrain source={terrain_source}, "
+        f"size={args.terrain_size:g} m, seed={args.terrain_seed}",
+        flush=True,
+    )
+    if args.scene in {"moon_surface", "procedural_moon"}:
+        snap_result = snap_roots_to_terrain(
+            get_current_stage(),
+            terrain_path="/World/envs/env_0/terrain",
+            root_paths=(
+                "/World/envs/env_0/lunar_outpost_part_1",
+                "/World/envs/env_0/lunar_outpost_part_2",
+            ),
+        )
+        if snap_result is None:
+            print("[EXROMA][WARN]: lunar outpost could not be snapped to terrain", flush=True)
+        else:
+            print(
+                "[EXROMA]: lunar outpost grounded; "
+                f"sampled_z=[{snap_result.minimum_height:.3f}, "
+                f"{snap_result.maximum_height:.3f}] m, "
+                f"shift={snap_result.shift_z:+.3f} m",
+                flush=True,
+            )
+    print("[EXROMA]: assembling rover and dual arms", flush=True)
+    assemble_dual_piper()
+    _hide_pragyan_solar_panel(get_current_stage(), Usd, UsdGeom, UsdPhysics)
+    sim.reset()
+    _write_articulation_defaults(rover=scene["rover"], robot=scene["dual_piper"])
+    scene.reset()
+    scene["dual_piper"].set_joint_position_target(
+        scene["dual_piper"].data.default_joint_pos
+    )
+    scene.write_data_to_sim()
+    sim.step()
+    scene.update(sim.get_physics_dt())
+    print("[EXROMA]: simulation initialized", flush=True)
+
+    if args.task in ROBOTTWIN_TASKS:
+        bound = apply_benchmark_materials(
+            get_current_stage(), args.task, args.material
+        )
+        if bound:
+            print(f"[EXROMA]: lunar material bindings={bound}", flush=True)
+
+    rover = scene["rover"]
+    robot = scene["dual_piper"]
+    drive = PragyanDrive(rover)
+    joint_targets = robot.data.default_joint_pos.clone()
+    initial_state = scene.get_state(is_relative=False)
+    cameras = {}
+    if args.command == "collect":
+        cameras = {
+            "mast": scene["mast_camera"],
+            "front_left": scene["front_left_camera"],
+            "front_right": scene["front_right_camera"],
+        }
+
+    if args.command == "preview":
+        print(
+            f"[EXROMA]: preview ready task={args.task}, scene={args.scene}, "
+            f"gravity={domain.gravity:.5f} m/s^2",
+            flush=True,
+        )
+        steps = 0
+        while simulation_app.is_running():
+            robot.set_joint_position_target(joint_targets)
+            drive.stop()
+            scene.write_data_to_sim()
+            sim.step()
+            scene.update(sim.get_physics_dt())
+            steps += 1
+            if args.max_steps is not None and steps >= args.max_steps:
+                break
+        return 0
+
+    from exroma_bench.recording import MobileAlohaEpisodeRecorder
+    from exroma_bench.tasks.beat_block_hammer import (
+        CuroboBeatBlockHammerConfig,
+        CuroboBeatBlockHammerController,
+    )
+    from exroma_bench.tasks.benchmark_suite import (
+        benchmark_record_objects,
+        create_benchmark_controller,
+        sample_task_prompt,
+        write_task_prompt_file,
+    )
+    from exroma_bench.tasks.test_tube_rack import (
+        CuroboTestTubeRackConfig,
+        CuroboTestTubeRackController,
+    )
+
+    controller, record_objects = _create_controller(
+        args,
+        robot,
+        joint_targets,
+        scene,
+        create_benchmark_controller,
+        benchmark_record_objects,
+        CuroboTestTubeRackConfig,
+        CuroboTestTubeRackController,
+        CuroboBeatBlockHammerConfig,
+        CuroboBeatBlockHammerController,
+        TABLE_X,
+        TABLE_Y,
+        TABLE_HEIGHT,
+        TABLE_LENGTH,
+        TABLE_WIDTH,
+    )
+
+    base_controller = BasePoseApproachController(
+        rover,
+        goal_x=0.0,
+        goal_y=goal_y,
+    )
+    rng = random.Random(args.seed)
+    prompt_rng = random.Random(args.seed + 104729)
+    target_attempts = args.attempts if args.command == "collect" else args.episodes
+    output_dir = args.output or (
+        PROJECT_ROOT
+        / ("datasets" if args.command == "collect" else "evaluations")
+        / f"{args.task}_{args.scene}_seed{args.seed}_run{target_attempts}"
+    )
+    output_dir = output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    recorder = None
+    if args.command == "collect":
+        recorder = MobileAlohaEpisodeRecorder(
+            output_dir,
+            fps=args.record_fps,
+            jpeg_quality=args.jpeg_quality,
+            task_instruction=BENCHMARK_TASKS[args.task].instruction,
+            format_name=f"exroma.dual_piper.{args.task}.v1",
+            joint_encoding=MobileAlohaEpisodeRecorder.DUAL_PIPER_COMPACT_ENCODING,
+            export_video=not args.no_video,
+        )
+        if args.task in ROBOTTWIN_TASKS:
+            write_task_prompt_file(output_dir, args.task)
+
+    attempts = 0
+    successes = 0
+    records: list[dict[str, object]] = []
+    elapsed = 0.0
+    current_sample = None
+    current_prompt = BENCHMARK_TASKS[args.task].instruction
+    current_prompt_index = 0
+    current_prompt_source = "exroma_builtin"
+
+    def reset_attempt() -> None:
+        nonlocal current_sample, current_prompt, current_prompt_index, current_prompt_source
+        scene.reset_to(initial_state, is_relative=False)
+        scene.reset()
+        joint_targets.copy_(robot.data.default_joint_pos)
+        controller.joint_targets = joint_targets
+        robot.set_joint_position_target(joint_targets)
+        drive.stop()
+        scene.write_data_to_sim()
+        sim.step()
+        scene.update(sim.get_physics_dt())
+        current_sample = controller.randomize_and_start(rng)
+        if args.task in ROBOTTWIN_TASKS:
+            current_prompt, current_prompt_index, current_prompt_source = sample_task_prompt(
+                args.task, prompt_rng
+            )
+        base_controller.reset()
+        if recorder is not None:
+            recorder.start(
+                metadata={
+                    "benchmark": "ExRoMa-Bench",
+                    "task": args.task,
+                    "scene": args.scene,
+                    "domain": domain.name,
+                    "seed": args.seed,
+                    "terrain": {
+                        "source": terrain_source,
+                        "seed": args.terrain_seed,
+                        "size_m": args.terrain_size,
+                    },
+                    "sampled_object_pose": current_sample,
+                    "task_prompt": {
+                        "text": current_prompt,
+                        "index": current_prompt_index,
+                        "source": current_prompt_source,
+                    },
+                    "collision_check": {
+                        "curobo_table_obstacle": True,
+                        "curobo_arm_self_collision": bool(
+                            args.strict_collision_check
+                        ),
+                        "isaac_physx_contacts": True,
+                    },
+                    "policy_interface": {
+                        "joint_encoding": "dual_piper_compact",
+                        "robot_state_dim": 41,
+                        "action_dim": 16,
+                        "mast_fixed": True,
+                    },
+                },
+                joint_names=list(robot.joint_names),
+                camera_names=list(cameras),
+                task_instruction=current_prompt,
+            )
+
+    reset_attempt()
+    sim_dt = sim.get_physics_dt()
+    while simulation_app.is_running() and attempts < target_attempts:
+        if base_controller.is_active:
+            hold = getattr(controller, "hold_pre_manipulation_objects", None)
+            if callable(hold):
+                hold()
+            base_controller.update(sim_dt)
+            linear_command, angular_command = base_controller.base_command()
+        elif base_controller.is_failed:
+            linear_command, angular_command = 0.0, 0.0
+            if not controller.is_terminal:
+                fail = getattr(controller, "_fail", None)
+                if callable(fail):
+                    fail(base_controller.failure_reason)
+                else:
+                    controller.failure_reason = base_controller.failure_reason
+                    controller.state = "failed"
+        else:
+            controller.update(sim_dt)
+            linear_command, angular_command = controller.base_command()
+
+        mast_ids, _ = robot.find_joints(
+            ["camera_stand_.*_joint"], preserve_order=True
+        )
+        joint_targets[:, mast_ids] = robot.data.default_joint_pos[:, mast_ids]
+        robot.set_joint_position_target(joint_targets)
+        drive.apply(linear_command, angular_command)
+        scene.write_data_to_sim()
+        sim.step()
+        scene.update(sim_dt)
+        elapsed += sim_dt
+
+        if recorder is not None and recorder.is_recording:
+            recorder.capture(
+                sim_time=elapsed,
+                robot=robot,
+                base_robot=rover,
+                joint_targets=joint_targets,
+                base_command=(linear_command, angular_command),
+                cameras=cameras,
+                objects=record_objects,
+            )
+
+        controller.report_terminal_once()
+        if not controller.is_terminal:
+            continue
+        attempts += 1
+        succeeded = bool(controller.succeeded)
+        if succeeded:
+            successes += 1
+            if recorder is not None:
+                recorder.finish(success=True)
+        elif recorder is not None:
+            recorder.discard()
+        records.append(
+            {
+                "attempt": attempts,
+                "success": succeeded,
+                "failure_reason": controller.failure_reason,
+                "sample": current_sample,
+                "prompt": current_prompt,
+                "prompt_index": current_prompt_index,
+                "prompt_source": current_prompt_source,
+            }
+        )
+        _write_summary(
+            output_dir,
+            args,
+            domain.name,
+            attempts,
+            successes,
+            target_attempts,
+            records,
+        )
+        print(
+            f"[EXROMA][METRICS]: attempts={attempts}/{target_attempts}, "
+            f"successes={successes}, success_rate={successes / attempts:.3f}",
+            flush=True,
+        )
+        if attempts < target_attempts:
+            reset_attempt()
+
+    if recorder is not None and recorder.is_recording:
+        recorder.discard()
+    print(
+        f"[EXROMA][DONE]: successes={successes}, attempts={attempts}, "
+        f"success_rate={successes / attempts if attempts else 0.0:.3f}",
+        flush=True,
+    )
+    return 0
+
+
+def _create_controller(
+    args,
+    robot,
+    joint_targets,
+    scene,
+    create_benchmark_controller,
+    benchmark_record_objects,
+    tube_cfg_type,
+    tube_controller_type,
+    hammer_cfg_type,
+    hammer_controller_type,
+    table_x,
+    table_y,
+    table_height,
+    table_length,
+    table_width,
+):
+    if args.task in ROBOTTWIN_TASKS:
+        controller = create_benchmark_controller(
+            robot,
+            joint_targets,
+            scene,
+            args.task,
+            table_x=table_x,
+            table_y=table_y,
+            table_height=table_height,
+            table_length=table_length,
+            table_width=table_width,
+            strict_collision_check=args.strict_collision_check,
+        )
+        return controller, benchmark_record_objects(scene, args.task)
+    if args.task == "test_tube_rack":
+        target = scene["test_tube"]
+        cfg = tube_cfg_type(
+            arm="fl",
+            table_x=table_x,
+            table_y=table_y,
+            table_height=table_height,
+            table_length=table_length,
+            table_width=table_width,
+            target_x=table_x + 0.18,
+            target_y=table_y,
+            spawn_x_range=(-0.08, 0.10),
+            spawn_y_range=(-0.05, 0.12),
+            robot_config_stem="dual_piper",
+            align_base=False,
+            planner_self_collision_check=args.strict_collision_check,
+        )
+        return tube_controller_type(robot, joint_targets, target, cfg), {"test_tube": target}
+    hammer = scene["robotwin_hammer"]
+    block = scene["hammer_block"]
+    cfg = hammer_cfg_type(
+        arm="auto",
+        table_x=table_x,
+        table_y=table_y,
+        table_height=table_height,
+        table_length=table_length,
+        table_width=table_width,
+        planner_self_collision_check=args.strict_collision_check,
+    )
+    return (
+        hammer_controller_type(robot, joint_targets, hammer, block, None, cfg),
+        {"robotwin_hammer": hammer, "hammer_block": block},
+    )
+
+
+def _write_summary(
+    output_dir: Path,
+    args,
+    domain: str,
+    attempts: int,
+    successes: int,
+    target_attempts: int,
+    records: list[dict[str, object]],
+) -> None:
+    failures = Counter(
+        record["failure_reason"] or "unspecified" for record in records if not record["success"]
+    )
+    payload = {
+        "benchmark": "ExRoMa-Bench",
+        "mode": args.command,
+        "task": args.task,
+        "scene": args.scene,
+        "domain": domain,
+        "seed": args.seed,
+        "terrain": {
+            "source": (
+                "simforge_foundry"
+                if args.scene in {"procedural_moon", "procedural_mars"}
+                else "external_asset"
+            ),
+            "seed": args.terrain_seed,
+            "size_m": args.terrain_size,
+        },
+        "strict_curobo_collision_check": bool(args.strict_collision_check),
+        "target_attempts": target_attempts,
+        "attempts": attempts,
+        "successes": successes,
+        "failures": attempts - successes,
+        "success_rate": successes / attempts if attempts else 0.0,
+        "failure_counts": dict(failures),
+        "complete": attempts >= target_attempts,
+        "records": records,
+    }
+    destination = output_dir / "collection_summary.json"
+    temporary = output_dir / ".collection_summary.json.tmp"
+    temporary.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+    temporary.replace(destination)
+
+
+def _hide_pragyan_solar_panel(stage, Usd, UsdGeom, UsdPhysics) -> None:
+    root = stage.GetPrimAtPath("/World/envs/env_0/rover")
+    if not root.IsValid():
+        root = stage.GetPrimAtPath("/World/envs/env_0/robot")
+    for prim in Usd.PrimRange(root):
+        if "solar_panel" not in prim.GetPath().pathString.lower():
+            continue
+        imageable = UsdGeom.Imageable(prim)
+        if imageable:
+            imageable.MakeInvisible()
+        collision = UsdPhysics.CollisionAPI(prim)
+        if collision:
+            collision.GetCollisionEnabledAttr().Set(False)
+
+
+def _write_articulation_defaults(*, rover, robot) -> None:
+    """Make Isaac Lab config defaults the canonical episode initial state."""
+
+    for articulation in (rover, robot):
+        root_state = articulation.data.default_root_state.clone()
+        articulation.write_root_pose_to_sim(root_state[:, :7])
+        articulation.write_root_velocity_to_sim(root_state[:, 7:])
+        articulation.write_joint_state_to_sim(
+            articulation.data.default_joint_pos,
+            articulation.data.default_joint_vel,
+        )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,13 @@
+# Install after Isaac Sim and Isaac Lab. Keep their strict Click/Coverage pins.
+click==8.1.7
+coverage==7.4.4
+h5py>=3.10,<4
+huggingface-hub==0.36.2
+modelscope-hub==0.2.0
+numpy==1.26.0
+opencv-python-headless>=4.9,<5
+platformdirs>=4,<5
+pydantic>=2,<3
+PyYAML>=6,<7
+pytest>=8,<10
+ruff>=0.9,<1
