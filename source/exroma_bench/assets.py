@@ -58,13 +58,22 @@ def pull_assets(
             raise RuntimeError(
                 "modelscope-hub is required. Install ExRoMa's compatible requirements."
             ) from exc
+        api = HubApi(endpoint=MODELSCOPE_ENDPOINT)
         downloaded = Path(
-            HubApi(endpoint=MODELSCOPE_ENDPOINT).download_repo(
+            api.download_repo(
                 repo_id=repo_id,
                 repo_type="dataset",
                 local_dir=destination,
             )
         ).resolve()
+        for missing_path in verify_assets(downloaded):
+            api.download_file(
+                repo_id=repo_id,
+                repo_type="dataset",
+                file_path=missing_path.relative_to(downloaded).as_posix(),
+                local_dir=downloaded,
+                force=True,
+            )
     else:
         try:
             from huggingface_hub import snapshot_download

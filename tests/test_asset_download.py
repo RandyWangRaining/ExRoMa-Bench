@@ -69,6 +69,9 @@ def test_incomplete_download_is_rejected(monkeypatch, tmp_path: Path) -> None:
         def download_repo(self, **kwargs):
             return kwargs["local_dir"]
 
+        def download_file(self, **_kwargs):
+            return missing
+
     module.HubApi = FakeHubApi
     monkeypatch.setitem(sys.modules, "modelscope_hub", module)
     missing = tmp_path / "usd" / "terrain" / "moon.usdz"
@@ -76,3 +79,45 @@ def test_incomplete_download_is_rejected(monkeypatch, tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="incomplete .*1 required files missing"):
         assets.pull_assets(root=tmp_path)
+
+
+def test_modelscope_recovers_files_missing_from_snapshot_tree(
+    monkeypatch, tmp_path: Path
+) -> None:
+    calls = []
+    module = ModuleType("modelscope_hub")
+    missing = tmp_path / "usd" / "scenery" / "lunalab.usdc"
+
+    class FakeHubApi:
+        def __init__(self, **_kwargs):
+            pass
+
+        def download_repo(self, **kwargs):
+            return kwargs["local_dir"]
+
+        def download_file(self, **kwargs):
+            calls.append(kwargs)
+            missing.parent.mkdir(parents=True)
+            missing.touch()
+            return missing
+
+    module.HubApi = FakeHubApi
+    monkeypatch.setitem(sys.modules, "modelscope_hub", module)
+    monkeypatch.setattr(
+        assets,
+        "verify_assets",
+        lambda _root: [] if missing.is_file() else [missing],
+    )
+
+    destination = assets.pull_assets(root=tmp_path)
+
+    assert destination == tmp_path.resolve()
+    assert calls == [
+        {
+            "repo_id": "ruilin.wang/ExRoMa-Assets",
+            "repo_type": "dataset",
+            "file_path": "usd/scenery/lunalab.usdc",
+            "local_dir": tmp_path.resolve(),
+            "force": True,
+        }
+    ]
