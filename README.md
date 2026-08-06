@@ -10,9 +10,11 @@ collection, policy evaluation, and guarded real-robot execution.
 This repository contains code, configuration, tests, and documentation only.
 Large USD, URDF, mesh, texture, and task-object assets live in the separate
 [`ruilin.wang/ExRoMa-Assets`](https://modelscope.ai/datasets/ruilin.wang/ExRoMa-Assets)
-ModelScope dataset. Datasets and checkpoints are also external. Until the
-asset bundle passes `exroma assets verify`, use `exroma assets link` with a
-complete local bundle.
+ModelScope dataset. The initial four-task LeRobot v2.1 demonstration release is
+available from
+[`ruilin.wang/ExRoMa-Dataset`](https://modelscope.ai/datasets/ruilin.wang/ExRoMa-Dataset).
+Checkpoints are also external. Until the asset bundle passes
+`exroma assets verify`, use `exroma assets link` with a complete local bundle.
 
 ExRoMa does not require sibling `ref_*` repositories. Isaac Sim, Isaac Lab,
 cuRobo, SimForge, and SimForge Foundry are normal third-party dependencies.
@@ -227,6 +229,21 @@ exroma evaluate \
   --headless
 ```
 
+Evaluate a learned policy through a separate WebSocket inference server:
+
+```bash
+python scripts/serve_policy.py --host 127.0.0.1 --port 8000
+
+exroma evaluate \
+  --task stack_blocks_two \
+  --scene procedural_moon \
+  --episodes 100 \
+  --seed 30000 \
+  --policy-host 127.0.0.1 \
+  --policy-port 8000 \
+  --headless
+```
+
 The real-robot command is safety-gated and defaults to dry-run:
 
 ```bash
@@ -236,6 +253,8 @@ exroma real --config configs/real/dual_piper_rover.yaml --dry-run
 See [Getting Started](docs/getting_started.md),
 [Data Collection](docs/data_collection.md),
 [Four-Task Collection Commands](docs/four_task_collection_commands.md),
+[LeRobot v2.1 Conversion](docs/lerobot_v21_conversion.md),
+[Remote Policy Evaluation](docs/remote_policy_evaluation.md),
 [Publishing Assets](docs/publishing_assets.md),
 [Terrain Pipeline](docs/terrain_pipeline.md), and
 [Real-Robot Execution](docs/real_robot.md) for the full workflows.
@@ -253,9 +272,11 @@ See [Getting Started](docs/getting_started.md),
 
 Successful episodes use RoboTwin-compatible HDF5 paths and raw, unlabeled
 camera JPEGs. Text overlays are applied only to optional MP4 previews. The
-compact policy interface is three RGB views plus a 41-dimensional robot state,
-with a 16-dimensional action containing 14 arm/gripper targets and two rover
-commands.
+LeRobot v2.1 release stores the three raw RGB views as H.264 videos. Its compact
+policy interface contains a 16-dimensional observation state with 14
+arm/gripper joint positions plus rover forward and yaw velocities, and a
+16-dimensional action with 14 arm/gripper targets plus rover linear and angular
+velocity commands.
 
 `--attempts N` always means **N total attempted rollouts**. Failed rollouts are
 counted in `collection_summary.json` and discarded from HDF5 output, so the

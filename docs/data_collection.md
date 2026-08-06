@@ -61,10 +61,17 @@ The compact dual-PiPER representation records:
 - `actions/base_velocity`: commanded linear and angular rover velocity.
 - `observations/objects/<name>/pose`: task-object world poses.
 
-This yields a 41-dimensional non-image robot state and a 16-dimensional action.
-The mast is fixed during collection and is therefore not part of the action.
-For compatibility, hard links expose `action` and RoboTwin-style camera names
-without duplicating payloads.
+The HDF5 file retains 41 raw non-image values so world-frame base pose and full
+base velocity remain available for analysis. The compact learning interface
+derives a 16-dimensional state: 14 arm/gripper joint positions plus rover
+forward and yaw velocities. Its action is also 16-dimensional: 14 arm/gripper
+targets plus rover linear and angular commands. The mast is fixed during
+collection and is therefore not part of the action. For compatibility, hard
+links expose `action` and RoboTwin-style camera names without duplicating
+payloads.
+
+See [Remote Policy Evaluation](remote_policy_evaluation.md) for the WebSocket
+client/server contract used to evaluate a trained vision policy.
 
 HDF5 camera frames are never annotated. Labels and view names exist only in
 the optional MP4 visualization.
