@@ -19,6 +19,7 @@ dependencies = [
   "PyYAML>=6.0",
   "simforge>=0.2.4,<0.3",
   "simforge-foundry>=0.3.1,<0.4",
+  "websockets>=12,<13",
 ]
 
 [project.optional-dependencies]

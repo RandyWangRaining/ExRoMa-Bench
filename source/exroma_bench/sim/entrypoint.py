@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import argparse
-from collections import Counter
 import json
-from pathlib import Path
 import random
 import sys
 import traceback
+from collections import Counter
+from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
 from exroma_bench.paths import PROJECT_ROOT
 from exroma_bench.tasks.benchmark_suite.registry import BENCHMARK_TASKS
-
 
 TASKS = tuple(BENCHMARK_TASKS)
 SCENES = (
@@ -56,19 +55,47 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--record-fps", type=float, default=10.0)
     parser.add_argument("--jpeg-quality", type=int, default=90)
     parser.add_argument("--no-video", action="store_true")
+    parser.add_argument(
+        "--policy-host",
+        help="WebSocket policy server host. Valid with evaluate only.",
+    )
+    parser.add_argument("--policy-port", type=int, default=8000)
+    parser.add_argument("--policy-connect-timeout", type=float, default=30.0)
+    parser.add_argument("--policy-response-timeout", type=float, default=30.0)
+    parser.add_argument(
+        "--policy-frequency",
+        type=float,
+        default=10.0,
+        help="Remote policy action frequency in Hz.",
+    )
+    parser.add_argument(
+        "--policy-action-horizon",
+        type=int,
+        default=8,
+        help="Maximum number of returned actions consumed from each policy query.",
+    )
+    parser.add_argument("--policy-jpeg-quality", type=int, default=85)
+    parser.add_argument(
+        "--record-policy-video",
+        action="store_true",
+        help="Save HDF5 and a three-view MP4 for every remote-policy evaluation episode.",
+    )
     AppLauncher.add_app_launcher_args(parser)
     return parser
 
 
 def _preload_curobo() -> None:
-    import torch as _torch  # noqa: F401
-    from curobo.curobolib import (  # noqa: F401
-        geom_cu as _geom_cu,
-        kinematics_fused_cu as _kinematics_fused_cu,
-        lbfgs_step_cu as _lbfgs_step_cu,
-        line_search_cu as _line_search_cu,
-        tensor_step_cu as _tensor_step_cu,
-    )
+    import importlib
+
+    for module_name in (
+        "torch",
+        "curobo.curobolib.geom_cu",
+        "curobo.curobolib.kinematics_fused_cu",
+        "curobo.curobolib.lbfgs_step_cu",
+        "curobo.curobolib.line_search_cu",
+        "curobo.curobolib.tensor_step_cu",
+    ):
+        importlib.import_module(module_name)
 
     print("[EXROMA][CUROBO]: CUDA extensions preloaded", flush=True)
 
@@ -80,11 +107,22 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--attempts and --episodes must be positive")
     if args.terrain_size <= 0.0:
         parser.error("--terrain-size must be positive")
+    if args.policy_host and args.command != "evaluate":
+        parser.error("--policy-host is only valid with the evaluate command")
+    if not 1 <= args.policy_port <= 65535:
+        parser.error("--policy-port must be between 1 and 65535")
+    if args.policy_connect_timeout <= 0.0 or args.policy_response_timeout <= 0.0:
+        parser.error("policy timeouts must be positive")
+    if args.policy_frequency <= 0.0 or args.policy_action_horizon <= 0:
+        parser.error("policy frequency and action horizon must be positive")
+    if not 1 <= args.policy_jpeg_quality <= 100:
+        parser.error("--policy-jpeg-quality must be between 1 and 100")
+    if args.record_policy_video and not args.policy_host:
+        parser.error("--record-policy-video requires --policy-host")
     automatic = args.command in {"collect", "evaluate"}
     if automatic:
         _preload_curobo()
-    if args.command == "collect":
-        args.enable_cameras = True
+    args.enable_cameras = bool(args.command == "collect" or args.policy_host)
     # AppLauncher receives the parsed namespace directly. Keep ExRoMa's positional
     # command and task arguments away from Kit's own command-line parser.
     sys.argv = [sys.argv[0]]
@@ -108,7 +146,6 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run(args, simulation_app) -> int:
     print("[EXROMA]: loading Isaac Lab runtime modules", flush=True)
-    import torch
     import isaaclab.sim as sim_utils
     from isaaclab.scene import InteractiveScene
     from isaaclab.sim import SimulationContext
@@ -121,7 +158,6 @@ def _run(args, simulation_app) -> int:
     from .base_approach import BasePoseApproachController
     from .domains import domain_for_scene
     from .rover_drive import PragyanDrive
-    from .scene_alignment import snap_roots_to_terrain
     from .scene import (
         TABLE_HEIGHT,
         TABLE_LENGTH,
@@ -131,6 +167,8 @@ def _run(args, simulation_app) -> int:
         build_scene_cfg,
         ensure_terrain_collisions,
     )
+    from .scene_alignment import snap_roots_to_terrain
+
     print("[EXROMA]: building simulation context", flush=True)
     domain = domain_for_scene(args.scene)
     task_goal_y = {
@@ -165,7 +203,7 @@ def _run(args, simulation_app) -> int:
         robot_start_y=robot_start_y,
         spacing=args.terrain_size,
         material_style=args.material,
-        enable_cameras=args.command == "collect",
+        enable_cameras=args.enable_cameras,
         terrain_seed=args.terrain_seed,
     )
     if args.command in {"collect", "evaluate"}:
@@ -183,8 +221,7 @@ def _run(args, simulation_app) -> int:
             get_current_stage(), "/World/envs/env_0/terrain"
         )
     print(
-        f"[EXROMA]: terrain meshes={terrain_meshes}, "
-        f"collision APIs added={collision_apis_added}",
+        f"[EXROMA]: terrain meshes={terrain_meshes}, collision APIs added={collision_apis_added}",
         flush=True,
     )
     terrain_source = (
@@ -222,18 +259,14 @@ def _run(args, simulation_app) -> int:
     sim.reset()
     _write_articulation_defaults(rover=scene["rover"], robot=scene["dual_piper"])
     scene.reset()
-    scene["dual_piper"].set_joint_position_target(
-        scene["dual_piper"].data.default_joint_pos
-    )
+    scene["dual_piper"].set_joint_position_target(scene["dual_piper"].data.default_joint_pos)
     scene.write_data_to_sim()
     sim.step()
     scene.update(sim.get_physics_dt())
     print("[EXROMA]: simulation initialized", flush=True)
 
     if args.task in ROBOTTWIN_TASKS:
-        bound = apply_benchmark_materials(
-            get_current_stage(), args.task, args.material
-        )
+        bound = apply_benchmark_materials(get_current_stage(), args.task, args.material)
         if bound:
             print(f"[EXROMA]: lunar material bindings={bound}", flush=True)
 
@@ -243,7 +276,7 @@ def _run(args, simulation_app) -> int:
     joint_targets = robot.data.default_joint_pos.clone()
     initial_state = scene.get_state(is_relative=False)
     cameras = {}
-    if args.command == "collect":
+    if args.enable_cameras:
         cameras = {
             "mast": scene["mast_camera"],
             "front_left": scene["front_left_camera"],
@@ -317,6 +350,31 @@ def _run(args, simulation_app) -> int:
     )
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    if args.command == "evaluate" and args.policy_host:
+        policy_cameras = {
+            "cam_high": cameras["mast"],
+            "cam_left_wrist": cameras["front_left"],
+            "cam_right_wrist": cameras["front_right"],
+        }
+        return _run_remote_policy_evaluation(
+            args=args,
+            simulation_app=simulation_app,
+            sim=sim,
+            scene=scene,
+            rover=rover,
+            robot=robot,
+            drive=drive,
+            joint_targets=joint_targets,
+            initial_state=initial_state,
+            controller=controller,
+            cameras=policy_cameras,
+            record_objects=record_objects,
+            rng=rng,
+            prompt_rng=prompt_rng,
+            target_episodes=target_attempts,
+            output_dir=output_dir,
+            domain_name=domain.name,
+        )
     recorder = None
     if args.command == "collect":
         recorder = MobileAlohaEpisodeRecorder(
@@ -378,14 +436,12 @@ def _run(args, simulation_app) -> int:
                     },
                     "collision_check": {
                         "curobo_table_obstacle": True,
-                        "curobo_arm_self_collision": bool(
-                            args.strict_collision_check
-                        ),
+                        "curobo_arm_self_collision": bool(args.strict_collision_check),
                         "isaac_physx_contacts": True,
                     },
                     "policy_interface": {
                         "joint_encoding": "dual_piper_compact",
-                        "robot_state_dim": 41,
+                        "robot_state_dim": 16,
                         "action_dim": 16,
                         "mast_fixed": True,
                     },
@@ -417,9 +473,7 @@ def _run(args, simulation_app) -> int:
             controller.update(sim_dt)
             linear_command, angular_command = controller.base_command()
 
-        mast_ids, _ = robot.find_joints(
-            ["camera_stand_.*_joint"], preserve_order=True
-        )
+        mast_ids, _ = robot.find_joints(["camera_stand_.*_joint"], preserve_order=True)
         joint_targets[:, mast_ids] = robot.data.default_joint_pos[:, mast_ids]
         robot.set_joint_position_target(joint_targets)
         drive.apply(linear_command, angular_command)
@@ -482,6 +536,229 @@ def _run(args, simulation_app) -> int:
         recorder.discard()
     print(
         f"[EXROMA][DONE]: successes={successes}, attempts={attempts}, "
+        f"success_rate={successes / attempts if attempts else 0.0:.3f}",
+        flush=True,
+    )
+    return 0
+
+
+def _run_remote_policy_evaluation(
+    *,
+    args,
+    simulation_app,
+    sim,
+    scene,
+    rover,
+    robot,
+    drive,
+    joint_targets,
+    initial_state,
+    controller,
+    cameras,
+    record_objects,
+    rng,
+    prompt_rng,
+    target_episodes: int,
+    output_dir: Path,
+    domain_name: str,
+) -> int:
+    """Evaluate a remote vision policy while Isaac Sim owns all robot I/O."""
+
+    import time
+    from collections import deque
+
+    from exroma_bench.policy.client import RemotePolicyClient
+    from exroma_bench.policy.sim_codec import DualPiperPolicyCodec, PolicyTaskMonitor
+    from exroma_bench.recording import MobileAlohaEpisodeRecorder
+    from exroma_bench.tasks.benchmark_suite import sample_task_prompt
+
+    sim_dt = sim.get_physics_dt()
+    control_steps = max(1, round(1.0 / (args.policy_frequency * sim_dt)))
+    max_steps = args.max_steps or max(1, round(120.0 / sim_dt))
+    codec = DualPiperPolicyCodec(robot, rover)
+    monitor = PolicyTaskMonitor(controller, args.task, max_steps=max_steps)
+    records: list[dict[str, object]] = []
+    successes = 0
+    attempts = 0
+    recorder = None
+    if args.record_policy_video:
+        recorder = MobileAlohaEpisodeRecorder(
+            output_dir,
+            fps=args.record_fps,
+            jpeg_quality=args.jpeg_quality,
+            task_instruction=BENCHMARK_TASKS[args.task].instruction,
+            format_name=f"exroma.remote_policy_replay.{args.task}.v1",
+            joint_encoding=MobileAlohaEpisodeRecorder.DUAL_PIPER_COMPACT_ENCODING,
+            export_video=True,
+        )
+    record_cameras = {
+        "mast": cameras["cam_high"],
+        "front_left": cameras["cam_left_wrist"],
+        "front_right": cameras["cam_right_wrist"],
+    }
+
+    print(
+        f"[EXROMA][POLICY]: connecting to ws://{args.policy_host}:{args.policy_port}; "
+        f"state=16, action=16, cameras=3, frequency={1.0 / (control_steps * sim_dt):.2f} Hz",
+        flush=True,
+    )
+    with RemotePolicyClient(
+        args.policy_host,
+        args.policy_port,
+        connect_timeout=args.policy_connect_timeout,
+        response_timeout=args.policy_response_timeout,
+        jpeg_quality=args.policy_jpeg_quality,
+    ) as client:
+        print(
+            f"[EXROMA][POLICY]: connected policy={client.metadata['policy_name']!r}",
+            flush=True,
+        )
+        while simulation_app.is_running() and attempts < target_episodes:
+            scene.reset_to(initial_state, is_relative=False)
+            scene.reset()
+            joint_targets.copy_(robot.data.default_joint_pos)
+            controller.joint_targets = joint_targets
+            robot.set_joint_position_target(joint_targets)
+            drive.stop()
+            scene.write_data_to_sim()
+            sim.step()
+            scene.update(sim_dt)
+
+            sample = controller.randomize_and_start(rng)
+            if args.task in ROBOTTWIN_TASKS:
+                prompt, prompt_index, prompt_source = sample_task_prompt(args.task, prompt_rng)
+            else:
+                prompt = BENCHMARK_TASKS[args.task].instruction
+                prompt_index = 0
+                prompt_source = "exroma_builtin"
+            robot.set_joint_position_target(joint_targets)
+            drive.stop()
+            scene.write_data_to_sim()
+            sim.step()
+            scene.update(sim_dt)
+
+            client.reset()
+            monitor.reset()
+            if recorder is not None:
+                recorder.start(
+                    metadata={
+                        "benchmark": "ExRoMa-Bench",
+                        "mode": "remote_policy_evaluation",
+                        "task": args.task,
+                        "scene": args.scene,
+                        "seed": args.seed,
+                        "sampled_object_pose": sample,
+                        "task_prompt": {
+                            "text": prompt,
+                            "index": prompt_index,
+                            "source": prompt_source,
+                        },
+                        "policy_server": f"ws://{args.policy_host}:{args.policy_port}",
+                    },
+                    joint_names=list(robot.joint_names),
+                    camera_names=list(record_cameras),
+                    task_instruction=prompt,
+                )
+            action_queue = deque()
+            episode_time = 0.0
+            query_count = 0
+            round_trip_ms: list[float] = []
+            server_infer_ms: list[float] = []
+            policy_finished = False
+
+            while simulation_app.is_running() and not monitor.is_terminal:
+                if not action_queue:
+                    state = codec.state()
+                    images = codec.images(cameras)
+                    query_start = time.perf_counter()
+                    actions, timing = client.infer(
+                        state=state,
+                        images=images,
+                        prompt=prompt,
+                        timestamp=episode_time,
+                    )
+                    round_trip_ms.append((time.perf_counter() - query_start) * 1000.0)
+                    if "infer_ms" in timing:
+                        server_infer_ms.append(float(timing["infer_ms"]))
+                    policy_status = timing.get("policy_status", {})
+                    policy_finished = bool(policy_status.get("finished", False))
+                    action_queue.extend(actions[: args.policy_action_horizon])
+                    query_count += 1
+
+                action = action_queue.popleft()
+                linear_command, angular_command = codec.apply_action(action, joint_targets)
+                for _ in range(control_steps):
+                    robot.set_joint_position_target(joint_targets)
+                    drive.apply(linear_command, angular_command)
+                    scene.write_data_to_sim()
+                    sim.step()
+                    scene.update(sim_dt)
+                    episode_time += sim_dt
+                    if recorder is not None:
+                        recorder.capture(
+                            sim_time=episode_time,
+                            robot=robot,
+                            base_robot=rover,
+                            joint_targets=joint_targets,
+                            base_command=(linear_command, angular_command),
+                            cameras=record_cameras,
+                            objects=record_objects,
+                        )
+                    monitor.update(sim_dt)
+                    if monitor.is_terminal or not simulation_app.is_running():
+                        break
+                if policy_finished and not action_queue and not monitor.is_terminal:
+                    monitor.failure_reason = "policy action trajectory exhausted"
+
+            if not simulation_app.is_running() and not monitor.is_terminal:
+                break
+            drive.stop()
+            attempts += 1
+            succeeded = bool(monitor.succeeded)
+            successes += int(succeeded)
+            failure_reason = "" if succeeded else monitor.failure_reason
+            if recorder is not None:
+                recorder.finish(success=succeeded)
+            records.append(
+                {
+                    "attempt": attempts,
+                    "success": succeeded,
+                    "failure_reason": failure_reason,
+                    "sample": sample,
+                    "prompt": prompt,
+                    "prompt_index": prompt_index,
+                    "prompt_source": prompt_source,
+                    "policy_queries": query_count,
+                    "episode_steps": monitor.steps,
+                    "episode_time_s": monitor.elapsed,
+                    "mean_round_trip_ms": (
+                        sum(round_trip_ms) / len(round_trip_ms) if round_trip_ms else None
+                    ),
+                    "mean_server_infer_ms": (
+                        sum(server_infer_ms) / len(server_infer_ms) if server_infer_ms else None
+                    ),
+                }
+            )
+            _write_summary(
+                output_dir,
+                args,
+                domain_name,
+                attempts,
+                successes,
+                target_episodes,
+                records,
+            )
+            print(
+                f"[EXROMA][POLICY][METRICS]: episodes={attempts}/{target_episodes}, "
+                f"successes={successes}, success_rate={successes / attempts:.3f}",
+                flush=True,
+            )
+
+    if recorder is not None and recorder.is_recording:
+        recorder.finish(success=False)
+    drive.stop()
+    print(
+        f"[EXROMA][POLICY][DONE]: successes={successes}, episodes={attempts}, "
         f"success_rate={successes / attempts if attempts else 0.0:.3f}",
         flush=True,
     )
@@ -592,6 +869,17 @@ def _write_summary(
         "complete": attempts >= target_attempts,
         "records": records,
     }
+    if getattr(args, "policy_host", None):
+        payload["policy_interface"] = {
+            "protocol": "exroma.policy.v1",
+            "server": f"ws://{args.policy_host}:{args.policy_port}",
+            "state_dim": 16,
+            "action_dim": 16,
+            "cameras": ["cam_high", "cam_left_wrist", "cam_right_wrist"],
+            "mast_fixed": True,
+            "frequency_hz": args.policy_frequency,
+            "action_horizon": args.policy_action_horizon,
+        }
     destination = output_dir / "collection_summary.json"
     temporary = output_dir / ".collection_summary.json.tmp"
     temporary.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")

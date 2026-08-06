@@ -229,6 +229,21 @@ exroma evaluate \
   --headless
 ```
 
+Evaluate a learned policy through a separate WebSocket inference server:
+
+```bash
+python scripts/serve_policy.py --host 127.0.0.1 --port 8000
+
+exroma evaluate \
+  --task stack_blocks_two \
+  --scene procedural_moon \
+  --episodes 100 \
+  --seed 30000 \
+  --policy-host 127.0.0.1 \
+  --policy-port 8000 \
+  --headless
+```
+
 The real-robot command is safety-gated and defaults to dry-run:
 
 ```bash
@@ -239,6 +254,7 @@ See [Getting Started](docs/getting_started.md),
 [Data Collection](docs/data_collection.md),
 [Four-Task Collection Commands](docs/four_task_collection_commands.md),
 [LeRobot v2.1 Conversion](docs/lerobot_v21_conversion.md),
+[Remote Policy Evaluation](docs/remote_policy_evaluation.md),
 [Publishing Assets](docs/publishing_assets.md),
 [Terrain Pipeline](docs/terrain_pipeline.md), and
 [Real-Robot Execution](docs/real_robot.md) for the full workflows.
