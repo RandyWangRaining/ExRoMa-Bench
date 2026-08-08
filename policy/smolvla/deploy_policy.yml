@@ -1,0 +1,16 @@
+policy_name: smolvla
+backend_factory: null
+checkpoint_dir: null
+device: cuda:0
+
+# ExRoMa LeRobot v2.1 feature contract.
+state_dim: 16
+action_dim: 16
+robot_type: dual_piper_rover
+camera_names:
+  - cam_high
+  - cam_left_wrist
+  - cam_right_wrist
+
+# Number of predicted actions returned to the simulator per query.
+action_steps: 50

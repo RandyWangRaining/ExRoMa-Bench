@@ -1,0 +1,18 @@
+policy_name: ACT
+backend_factory: null
+checkpoint_dir: null
+device: cuda:0
+
+# ExRoMa compact rover-manipulator contract.
+state_dim: 16
+action_dim: 16
+camera_names:
+  - cam_high
+  - cam_right_wrist
+  - cam_left_wrist
+
+# ACT deployment settings.
+chunk_size: 50
+temporal_agg: false
+image_width: 640
+image_height: 480

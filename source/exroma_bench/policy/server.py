@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import json
 import logging
 import threading
 import time
@@ -15,6 +14,7 @@ import numpy as np
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.server import ServerConnection, WebSocketServer, serve
 
+from .plugins import load_config_file
 from .protocol import (
     ACTION_DIM,
     PROTOCOL_VERSION,
@@ -83,7 +83,7 @@ class Hdf5ReplayPolicy:
 
 
 def load_policy_factory(spec: str, config_path: Path | None = None) -> Any:
-    """Load `module:factory`; the factory receives a decoded JSON config dict."""
+    """Load `module:factory`; the factory receives a YAML/JSON config mapping."""
 
     if ":" not in spec:
         raise ValueError("--policy-factory must use module:callable syntax.")
@@ -91,9 +91,7 @@ def load_policy_factory(spec: str, config_path: Path | None = None) -> Any:
     factory = getattr(importlib.import_module(module_name), attribute_name)
     config: dict[str, Any] = {}
     if config_path is not None:
-        config = json.loads(config_path.expanduser().read_text(encoding="utf-8"))
-        if not isinstance(config, dict):
-            raise ValueError("Policy config JSON must contain an object.")
+        config = load_config_file(config_path)
     return factory(config)
 
 
