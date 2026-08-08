@@ -225,7 +225,7 @@ exroma evaluate \
   --task stack_blocks_two \
   --scene procedural_moon \
   --episodes 100 \
-  --seed 30000 \
+  --seed 100000 \
   --headless
 ```
 
@@ -245,7 +245,7 @@ exroma evaluate \
   --task stack_blocks_two \
   --scene procedural_moon \
   --episodes 100 \
-  --seed 30000 \
+  --seed 100000 \
   --policy-host 127.0.0.1 \
   --policy-port 8000 \
   --headless

@@ -89,7 +89,7 @@ conda activate openspace
   --task stack_blocks_two \
   --scene procedural_moon \
   --episodes 100 \
-  --seed 30000 \
+  --seed 100000 \
   --policy-host 127.0.0.1 \
   --policy-port 8000 \
   --policy-frequency 10 \
@@ -102,6 +102,11 @@ checks, and success-rate reporting. The policy owns inference only. Results go
 to `evaluations/<task>_<scene>_seed<seed>_run<episodes>/collection_summary.json`
 unless `--output` is provided. Each record includes the sampled object pose,
 prompt, terminal result, number of policy queries, and inference timing.
+
+`evaluate` defaults to `--episodes 100 --seed 100000`; these flags are shown
+explicitly above only to make the benchmark protocol visible. The seed creates
+one deterministic random stream for all 100 episodes rather than assigning
+the integer seeds `100000` through `100099` episode by episode.
 
 The built-in hold policy is not expected to complete a task. Use it to verify
 the port and observation contract before connecting a trained model.
