@@ -10,7 +10,7 @@ from typing import Callable
 import torch
 from isaaclab.utils import math as math_utils
 
-from exroma_bench.isaaclab_compat import get_root_pose_w
+from exroma_bench.sim.isaaclab_compat import get_root_pose_w
 from exroma_bench.tasks.mobile_aloha_pick_place.curobo_auto_controller import (
     CuroboAutoPickPlaceConfig,
     CuroboAutoPickPlaceController,

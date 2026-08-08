@@ -9,7 +9,7 @@ import torch
 import isaaclab.utils.math as math_utils
 from isaaclab.controllers import DifferentialIKController, DifferentialIKControllerCfg
 
-from exroma_bench.isaaclab_compat import get_root_pose_w
+from exroma_bench.sim.isaaclab_compat import get_root_pose_w
 
 
 @dataclass

@@ -8,7 +8,7 @@ import random
 
 import torch
 
-from exroma_bench.isaaclab_compat import get_root_pose_w
+from exroma_bench.sim.isaaclab_compat import get_root_pose_w
 import isaaclab.utils.math as math_utils
 
 from .curobo_planner import CuroboTrajectory, MobileAlohaCuroboPlanner
