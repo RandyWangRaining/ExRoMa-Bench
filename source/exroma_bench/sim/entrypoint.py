@@ -14,6 +14,7 @@ from pathlib import Path
 from isaaclab.app import AppLauncher
 
 from exroma_bench.paths import PROJECT_ROOT
+from exroma_bench.sim.defaults import DEFAULT_EVALUATION_EPISODES, resolve_task_seed
 from exroma_bench.tasks.benchmark_suite.registry import BENCHMARK_TASKS
 
 TASKS = tuple(BENCHMARK_TASKS)
@@ -42,8 +43,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task", choices=TASKS, default="stack_blocks_two")
     parser.add_argument("--scene", choices=SCENES, default="procedural_moon")
     parser.add_argument("--attempts", type=int, default=100)
-    parser.add_argument("--episodes", type=int, default=100)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--episodes", type=int, default=DEFAULT_EVALUATION_EPISODES)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Task randomization seed; defaults to 100000 for evaluate and 0 otherwise.",
+    )
     parser.add_argument(
         "--terrain-seed",
         type=int,
@@ -122,6 +128,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     run_exit_code = 1
+    args.seed = resolve_task_seed(args.command, args.seed)
     if args.attempts <= 0 or args.episodes <= 0:
         parser.error("--attempts and --episodes must be positive")
     if args.terrain_size <= 0.0:

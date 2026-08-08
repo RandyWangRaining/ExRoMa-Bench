@@ -1,0 +1,15 @@
+name: exroma-smolvla
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip>=25
+  - git
+  - ffmpeg
+  - pip:
+      - "lerobot[smolvla]==0.6.0"
+      - h5py>=3.10
+      - numpy>=1.26
+      - opencv-python-headless>=4.9
+      - pyyaml>=6.0
+      - websockets>=12,<13

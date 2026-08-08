@@ -1,0 +1,7 @@
+policy_name: replay
+episode_path: null
+action_horizon: 8
+
+# The recorded and predicted policy contract is always compact 16-D.
+state_dim: 16
+action_dim: 16

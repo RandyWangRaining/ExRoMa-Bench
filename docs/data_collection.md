@@ -32,13 +32,15 @@ exroma evaluate \
   --task stack_blocks_two \
   --scene procedural_moon \
   --episodes 100 \
-  --seed 30000 \
+  --seed 100000 \
   --strict-collision-check \
   --headless
 ```
 
 Evaluation writes attempt outcomes and failure counts under `evaluations/`,
-but does not initialize cameras or save HDF5 episodes.
+but does not initialize cameras or save HDF5 episodes. Both shown evaluation
+values are defaults: omitting them still runs 100 episodes from task RNG seed
+`100000`. Collection keeps its seed-zero default when `--seed` is omitted.
 
 ## Reproducibility
 

@@ -1,0 +1,17 @@
+policy_name: pi05
+backend_factory: null
+checkpoint_dir: null
+device: cuda:0
+
+# ExRoMa compact rover-manipulator contract.
+state_dim: 16
+action_dim: 16
+camera_names:
+  - cam_high
+  - cam_right_wrist
+  - cam_left_wrist
+
+# OpenPI deployment settings.
+action_steps: 50
+train_config_name: pi05_base_exroma_lora
+checkpoint_id: null
