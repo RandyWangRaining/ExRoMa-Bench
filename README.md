@@ -232,7 +232,14 @@ exroma evaluate \
 Evaluate a learned policy through a separate WebSocket inference server:
 
 ```bash
-python scripts/serve_policy.py --host 127.0.0.1 --port 8000
+python scripts/serve_policy.py --list-policies
+
+python scripts/serve_policy.py \
+  --policy-name ACT \
+  --policy-config /path/to/act_deploy.yml \
+  --checkpoint /path/to/checkpoint \
+  --host 127.0.0.1 \
+  --port 8000
 
 exroma evaluate \
   --task stack_blocks_two \
@@ -254,6 +261,7 @@ See [Getting Started](docs/getting_started.md),
 [Data Collection](docs/data_collection.md),
 [Four-Task Collection Commands](docs/four_task_collection_commands.md),
 [LeRobot v2.1 Conversion](docs/lerobot_v21_conversion.md),
+[Policy Workspaces](policy/README.md),
 [Remote Policy Evaluation](docs/remote_policy_evaluation.md),
 [Publishing Assets](docs/publishing_assets.md),
 [Terrain Pipeline](docs/terrain_pipeline.md), and

@@ -108,8 +108,9 @@ the port and observation contract before connecting a trained model.
 
 ## Replay one recorded episode and save video
 
-The replay adapter serves the recorded 14 joint targets and two rover commands
-through the same WebSocket policy interface. Start the server in terminal 1:
+The named `replay` policy serves the recorded 14 joint targets and two rover
+commands through the same WebSocket policy interface. Start the server in
+terminal 1:
 
 ```bash
 cd /home/ruilin/ExRoMa
@@ -118,6 +119,7 @@ conda activate openspace
 python scripts/serve_policy.py \
   --host 127.0.0.1 \
   --port 8000 \
+  --policy-name replay \
   --replay-episode datasets/stack_blocks_two_procedural_moon_seed20000_run100/episode_000000.hdf5 \
   --replay-action-horizon 8
 ```
@@ -155,9 +157,92 @@ The replay therefore preserves the policy-facing dataset contract but may
 accumulate enough tracking error to fail the final task geometry check. Its
 success field must be read from `collection_summary.json`.
 
-## Custom policy adapter
+## Named policy workspaces
 
-Create a Python module available on the server's `PYTHONPATH`:
+Learned algorithms live under `policy/<Name>/`, following the per-policy
+organization used by RoboTwin Arena. Each directory contains its adapter,
+deployment YAML, Conda environment, and algorithm notes. The simulator does
+not import ACT, PyTorch, JAX, or OpenPI; only the policy server does.
+
+List the adapters currently installed in ExRoMa:
+
+```bash
+cd /home/ruilin/ExRoMa
+python scripts/serve_policy.py --list-policies
+```
+
+The learned-policy workspaces are `ACT`, `pi05`, and `smolvla`; `replay` is
+also available for recorded-action diagnostics. ACT and pi05 leave
+`backend_factory` empty because ExRoMa does not redistribute third-party model
+code or checkpoints. SmolVLA includes a native LeRobot adapter but still
+requires an ExRoMa-finetuned checkpoint. Create a deployment YAML that points
+at your installed model factory:
+
+```yaml
+policy_name: ACT
+backend_factory: my_act_backend:create_model
+checkpoint_dir: /path/to/act/checkpoint
+device: cuda:0
+state_dim: 16
+action_dim: 16
+chunk_size: 50
+image_width: 640
+image_height: 480
+```
+
+Then start the named policy from its own environment:
+
+```bash
+cd /home/ruilin/ExRoMa
+conda env create -f policy/ACT/conda_env.yaml
+conda activate exroma-act
+python -m pip install --no-deps -e .
+
+PYTHONPATH=/path/to/your/act/code:$PYTHONPATH \
+python scripts/serve_policy.py \
+  --policy-name ACT \
+  --policy-config /path/to/act_deploy.yml \
+  --checkpoint /path/to/act/checkpoint \
+  --device cuda:0 \
+  --host 0.0.0.0 \
+  --port 8000
+```
+
+For pi0.5, use `policy/pi05/conda_env.yaml`, `--policy-name pi05`, and install
+OpenPI in that environment. See [Policy Workspaces](../policy/README.md),
+[ACT](../policy/ACT/README.md), and [pi0.5](../policy/pi05/README.md).
+
+For SmolVLA, use its Python 3.12 environment and native LeRobot adapter:
+
+```bash
+conda env create -f policy/smolvla/conda_env.yaml
+conda activate exroma-smolvla
+
+python scripts/serve_policy.py \
+  --policy-name smolvla \
+  --checkpoint /path/to/exroma_smolvla/pretrained_model \
+  --device cuda:0 \
+  --port 8000
+```
+
+See [SmolVLA](../policy/smolvla/README.md) for dataset features and fine-tuning.
+
+The lifecycle maps cleanly to RoboTwin Arena's policy modules:
+
+| ExRoMa | RoboTwin-style equivalent |
+| --- | --- |
+| `create_policy(config)` | `get_model(config)` |
+| `policy.infer(observation)` | encode observation and call model action inference |
+| `policy.reset()` | `reset_model(model)` |
+
+Unlike an in-process evaluator, ExRoMa keeps those methods on the server. This
+prevents Isaac Sim's pinned Python/CUDA packages from conflicting with an
+algorithm's training and inference stack.
+
+## Generic policy adapter
+
+For an experimental algorithm that does not yet need its own directory, create
+a Python module available on the server's `PYTHONPATH`:
 
 ```python
 import numpy as np
@@ -197,9 +282,10 @@ python scripts/serve_policy.py \
   --policy-config /path/to/policy_config.json
 ```
 
-The factory receives the decoded JSON object. Returning chunks reduces network
-round trips; ExRoMa consumes at most `--policy-action-horizon` actions before
-requesting a fresh observation.
+The factory receives the decoded YAML or JSON mapping. Returning chunks reduces
+network round trips; ExRoMa consumes at most `--policy-action-horizon` actions
+before requesting a fresh observation. Once the adapter stabilizes, move it to
+`policy/<Name>/` with its own `conda_env.yaml` and `deploy_policy.yml`.
 
 ## Safety boundary
 

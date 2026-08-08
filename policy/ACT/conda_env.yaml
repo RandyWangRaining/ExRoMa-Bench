@@ -1,0 +1,13 @@
+name: exroma-act
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - numpy=1.26
+  - pyyaml>=6.0
+  - h5py>=3.10
+  - pip:
+      - einops>=0.8
+      - opencv-python-headless>=4.9,<5
+      - websockets>=12,<13
