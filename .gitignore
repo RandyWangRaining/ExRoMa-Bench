@@ -18,6 +18,9 @@ outputs/
 checkpoints/
 *.log
 
+# External policy implementations installed into their isolated workspaces.
+policy/pi05/openpi/
+
 .vscode/
 .idea/
 *.swp

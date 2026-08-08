@@ -4,6 +4,33 @@ This directory is the ExRoMa deployment boundary for pi0.5/OpenPI. Keep the
 large JAX/OpenPI dependency stack in this policy environment, outside the
 Isaac Sim environment.
 
+## uv installation
+
+Install the official OpenPI source and its Python 3.11 environment inside this
+workspace:
+
+```bash
+git clone --recurse-submodules \
+  https://github.com/Physical-Intelligence/openpi.git \
+  policy/pi05/openpi
+
+cd policy/pi05/openpi
+GIT_LFS_SKIP_SMUDGE=1 UV_LINK_MODE=copy uv sync --python 3.11 --no-dev
+uv pip install --python .venv/bin/python --no-deps --editable ../../..
+uv pip install --python .venv/bin/python 'websockets==12.0'
+```
+
+Activate the installed policy environment from the repository root with:
+
+```bash
+source policy/pi05/openpi/.venv/bin/activate
+```
+
+This environment is only for OpenPI inference and training. Isaac Sim runs in
+its own environment and communicates with the policy through WebSocket.
+
+## Conda alternative
+
 1. Create the bridge environment and install ExRoMa's protocol package:
 
    ```bash
