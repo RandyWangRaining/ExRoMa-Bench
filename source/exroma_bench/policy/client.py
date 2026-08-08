@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Self
+from typing import Any
 
+from typing_extensions import Self
 from websockets.sync.client import ClientConnection, connect
 
 from .protocol import (

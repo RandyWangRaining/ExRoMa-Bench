@@ -8,6 +8,7 @@ import random
 
 import torch
 
+from exroma_bench.isaaclab_compat import get_root_pose_w
 import isaaclab.utils.math as math_utils
 
 from .curobo_planner import CuroboTrajectory, MobileAlohaCuroboPlanner
@@ -269,7 +270,7 @@ class CuroboAutoPickPlaceController:
         position_w: torch.Tensor,
         quaternion_w: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        root_pose_w = self.robot.data.root_pose_w
+        root_pose_w = get_root_pose_w(self.robot.data)
         return math_utils.subtract_frame_transforms(
             root_pose_w[:, :3],
             root_pose_w[:, 3:7],
@@ -282,7 +283,7 @@ class CuroboAutoPickPlaceController:
         position_b: torch.Tensor,
         quaternion_b: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        root_pose_w = self.robot.data.root_pose_w
+        root_pose_w = get_root_pose_w(self.robot.data)
         return math_utils.combine_frame_transforms(
             root_pose_w[:, :3],
             root_pose_w[:, 3:7],
@@ -307,7 +308,7 @@ class CuroboAutoPickPlaceController:
         )
 
     def _report_base_pose(self) -> None:
-        root_pose = self.robot.data.root_pose_w
+        root_pose = get_root_pose_w(self.robot.data)
         roll, pitch, yaw = math_utils.euler_xyz_from_quat(root_pose[:, 3:7])
         print(
             "[AUTO-CUROBO]: stable base pose="
@@ -320,7 +321,7 @@ class CuroboAutoPickPlaceController:
         )
 
     def _refresh_table_obstacle(self) -> None:
-        root_pose = self.robot.data.root_pose_w
+        root_pose = get_root_pose_w(self.robot.data)
         table_pos_w = torch.tensor(
             [
                 [
@@ -538,7 +539,7 @@ class CuroboAutoPickPlaceController:
                 f"Unsupported grasp approach mode: {self.cfg.grasp_approach_mode}"
             )
         candidate_count = len(quaternions_w)
-        root_pose_w = self.robot.data.root_pose_w.repeat(candidate_count, 1)
+        root_pose_w = get_root_pose_w(self.robot.data).repeat(candidate_count, 1)
         grasp_positions_w = object_pos_w.repeat(candidate_count, 1)
         grasp_positions_b, quaternions_b = math_utils.subtract_frame_transforms(
             root_pose_w[:, :3],
@@ -623,7 +624,7 @@ class CuroboAutoPickPlaceController:
             raise ValueError(
                 "Goal-set positions must be one XYZ position or one per orientation"
             )
-        root_pose_w = self.robot.data.root_pose_w.repeat(candidate_count, 1)
+        root_pose_w = get_root_pose_w(self.robot.data).repeat(candidate_count, 1)
         positions_b, quaternions_b = math_utils.subtract_frame_transforms(
             root_pose_w[:, :3],
             root_pose_w[:, 3:7],

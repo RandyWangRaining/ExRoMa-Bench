@@ -46,6 +46,9 @@ def _run_sim(command: str, passthrough: list[str]) -> int:
     root = isaaclab_root(require=True)
     script = PROJECT_ROOT / "scripts" / "run_sim.py"
     env = os.environ.copy()
+    for key in ("CONDA_PREFIX", "CONDA_DEFAULT_ENV", "CONDA_PROMPT_MODIFIER"):
+        env.pop(key, None)
+    env["PYTHONEXE"] = str(root / "_isaac_sim" / "kit" / "python" / "bin" / "python3")
     env["PYTHONPATH"] = os.pathsep.join(
         filter(None, [str(PROJECT_ROOT / "source"), env.get("PYTHONPATH", "")])
     )
@@ -70,7 +73,7 @@ def _doctor() -> int:
     for path in missing:
         print(f"missing   : {path}")
     required_checks = {
-        "python_3_11": sys.version_info[:2] == (3, 11),
+        "python_3_10_or_3_11": sys.version_info[:2] in {(3, 10), (3, 11)},
         "isaacsim": importlib.util.find_spec("isaacsim") is not None,
         "isaaclab_py": importlib.util.find_spec("isaaclab") is not None,
         "torch": importlib.util.find_spec("torch") is not None,

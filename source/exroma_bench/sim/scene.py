@@ -32,6 +32,7 @@ TABLE_LEG_HEIGHT = TABLE_HEIGHT - TABLE_THICKNESS
 TABLE_LEG_Z = 0.5 * TABLE_LEG_HEIGHT
 TABLE_LEG_X = 0.5 * TABLE_LENGTH - 0.5 * TABLE_LEG_THICKNESS
 TABLE_LEG_Y = 0.5 * TABLE_WIDTH - 0.5 * TABLE_LEG_THICKNESS
+DUAL_PIPER_LINK_ROOT = "/World/envs/env_0/dual_piper"
 
 
 def ensure_terrain_collisions(stage, terrain_path: str) -> tuple[int, int]:
@@ -147,6 +148,7 @@ def build_scene_cfg(
     material_style: str = "lunar",
     enable_cameras: bool = False,
     terrain_seed: int = 0,
+    fix_dual_piper_root: bool = False,
 ) -> InteractiveSceneCfg:
     domain = domain_for_scene(scene_name)
     mount_rot = (
@@ -183,6 +185,7 @@ def build_scene_cfg(
         dual_piper = build_dual_piper_module_cfg(
             pos=(0.0, robot_start_y, 0.67),
             rot=mount_rot,
+            fix_root_link=fix_dual_piper_root,
         )
         work_table_top = _table_part(
             "work_table_top",
@@ -249,18 +252,18 @@ def build_scene_cfg(
         scene_cfg.mast_camera = build_d435_camera_cfg(
             camera_name="mast",
             parent_link_name="camera_stand_2_Link",
-            prim_path="/World/envs/env_0/dual_piper",
+            prim_path=DUAL_PIPER_LINK_ROOT,
         )
         scene_cfg.front_left_camera = build_d435_camera_cfg(
             camera_name="front_left",
             parent_link_name="fl_link6",
-            prim_path="/World/envs/env_0/dual_piper",
+            prim_path=DUAL_PIPER_LINK_ROOT,
             wrist_mount_mode="piper",
         )
         scene_cfg.front_right_camera = build_d435_camera_cfg(
             camera_name="front_right",
             parent_link_name="fr_link6",
-            prim_path="/World/envs/env_0/dual_piper",
+            prim_path=DUAL_PIPER_LINK_ROOT,
             wrist_mount_mode="piper",
         )
     return scene_cfg

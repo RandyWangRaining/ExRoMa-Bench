@@ -9,6 +9,8 @@ import torch
 import isaaclab.utils.math as math_utils
 from isaaclab.controllers import DifferentialIKController, DifferentialIKControllerCfg
 
+from exroma_bench.isaaclab_compat import get_root_pose_w
+
 
 @dataclass
 class ScriptedPickPlaceConfig:
@@ -101,7 +103,7 @@ class ScriptedPickPlaceController:
         self.total_elapsed = 0.0
         self._reported_terminal = False
 
-        root_pose_w = self.robot.data.root_pose_w
+        root_pose_w = get_root_pose_w(self.robot.data)
         ee_pose_w = self.robot.data.body_pose_w[:, self.ee_body_id]
         _, self.fixed_ee_quat_b = math_utils.subtract_frame_transforms(
             root_pose_w[:, :3],
@@ -181,7 +183,7 @@ class ScriptedPickPlaceController:
         if self.fixed_ee_quat_b is None:
             return
 
-        root_pose_w = self.robot.data.root_pose_w
+        root_pose_w = get_root_pose_w(self.robot.data)
         target_quat_w = math_utils.quat_mul(root_pose_w[:, 3:7], self.fixed_ee_quat_b)
         target_pos_b, target_quat_b = math_utils.subtract_frame_transforms(
             root_pose_w[:, :3],

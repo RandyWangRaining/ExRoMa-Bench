@@ -10,6 +10,7 @@ from typing import Literal
 
 import torch
 
+from exroma_bench.isaaclab_compat import get_root_pose_w
 import isaaclab.utils.math as math_utils
 
 from exroma_bench.tasks.mobile_aloha_pick_place.curobo_planner import (
@@ -327,7 +328,7 @@ class CuroboBeatBlockHammerController:
         position_w: torch.Tensor,
         quaternion_w: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        root_pose_w = self.robot.data.root_pose_w
+        root_pose_w = get_root_pose_w(self.robot.data)
         return math_utils.subtract_frame_transforms(
             root_pose_w[:, :3],
             root_pose_w[:, 3:7],
@@ -340,7 +341,7 @@ class CuroboBeatBlockHammerController:
         position_b: torch.Tensor,
         quaternion_b: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        root_pose_w = self.robot.data.root_pose_w
+        root_pose_w = get_root_pose_w(self.robot.data)
         return math_utils.combine_frame_transforms(
             root_pose_w[:, :3],
             root_pose_w[:, 3:7],
@@ -391,7 +392,7 @@ class CuroboBeatBlockHammerController:
             return False
         self._refresh_table_obstacle()
         count = positions_w.shape[0]
-        root_pose = self.robot.data.root_pose_w.repeat(count, 1)
+        root_pose = get_root_pose_w(self.robot.data).repeat(count, 1)
         positions_b, quaternions_b = math_utils.subtract_frame_transforms(
             root_pose[:, :3],
             root_pose[:, 3:7],

@@ -10,6 +10,7 @@ from typing import Callable
 import torch
 from isaaclab.utils import math as math_utils
 
+from exroma_bench.isaaclab_compat import get_root_pose_w
 from exroma_bench.tasks.mobile_aloha_pick_place.curobo_auto_controller import (
     CuroboAutoPickPlaceConfig,
     CuroboAutoPickPlaceController,
@@ -746,7 +747,7 @@ class CuroboArticulatedMechanismController:
             + self.contact_advance * approach_w
         )
         precontact_positions_w = contact_positions_w - standoff * approach_w
-        root_pose_w = self.robot.data.root_pose_w.repeat(candidate_count, 1)
+        root_pose_w = get_root_pose_w(self.robot.data).repeat(candidate_count, 1)
         positions_b, quaternions_b = math_utils.subtract_frame_transforms(
             root_pose_w[:, :3],
             root_pose_w[:, 3:7],

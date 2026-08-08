@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import sys
 import traceback
@@ -26,6 +27,13 @@ SCENES = (
     "oberpfaffenhofen",
 )
 ROBOTTWIN_TASKS = {"stack_blocks_two", "handover_block", "scan_object", "scan_rock"}
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -55,6 +63,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--record-fps", type=float, default=10.0)
     parser.add_argument("--jpeg-quality", type=int, default=90)
     parser.add_argument("--no-video", action="store_true")
+    parser.add_argument(
+        "--keep-failed-recordings",
+        action="store_true",
+        help="Keep failed collect attempts as HDF5/video episodes marked success=False.",
+    )
+    parser.add_argument(
+        "--skip-base-approach",
+        action="store_true",
+        help="Start at the manipulation pose and skip the rover approach phase.",
+    )
     parser.add_argument(
         "--policy-host",
         help="WebSocket policy server host. Valid with evaluate only.",
@@ -103,6 +121,7 @@ def _preload_curobo() -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    run_exit_code = 1
     if args.attempts <= 0 or args.episodes <= 0:
         parser.error("--attempts and --episodes must be positive")
     if args.terrain_size <= 0.0:
@@ -123,6 +142,13 @@ def main(argv: list[str] | None = None) -> int:
     if automatic:
         _preload_curobo()
     args.enable_cameras = bool(args.command == "collect" or args.policy_host)
+    args.exroma_enable_cameras = args.enable_cameras
+    sim_gpu = int(os.environ.get("EXROMA_SIM_GPU", "0"))
+    args.active_gpu = sim_gpu
+    args.physics_gpu = sim_gpu
+    args.multi_gpu = _env_flag("EXROMA_MULTI_GPU", default=False)
+    if args.device == "cuda:0" and sim_gpu != 0:
+        args.device = f"cuda:{sim_gpu}"
     # AppLauncher receives the parsed namespace directly. Keep ExRoMa's positional
     # command and task arguments away from Kit's own command-line parser.
     sys.argv = [sys.argv[0]]
@@ -130,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     simulation_app = app_launcher.app
     try:
         result = _run(args, simulation_app)
+        run_exit_code = int(result)
         print("[EXROMA]: runtime loop finished", flush=True)
         return result
     except BaseException:
@@ -138,10 +165,20 @@ def main(argv: list[str] | None = None) -> int:
         raise
     finally:
         print("[EXROMA]: closing Isaac Sim", flush=True)
-        simulation_app.close(
-            wait_for_replicator=not args.headless,
-            skip_cleanup=bool(args.headless),
-        )
+        try:
+            simulation_app.close(
+                wait_for_replicator=not args.headless,
+                skip_cleanup=bool(args.headless),
+            )
+        except TypeError as exc:
+            if "skip_cleanup" not in str(exc):
+                raise
+            if args.headless and os.environ.get("EXROMA_FAST_HEADLESS_EXIT") == "1":
+                print("[EXROMA]: fast headless shutdown for Isaac Sim 4.5", flush=True)
+                sys.stdout.flush()
+                sys.stderr.flush()
+                os._exit(run_exit_code)
+            simulation_app.close(wait_for_replicator=not args.headless)
 
 
 def _run(args, simulation_app) -> int:
@@ -176,7 +213,7 @@ def _run(args, simulation_app) -> int:
         "beat_block_hammer": -0.05,
     }
     goal_y = task_goal_y.get(args.task, 0.05)
-    robot_start_y = goal_y + 0.60
+    robot_start_y = goal_y if args.skip_base_approach else goal_y + 0.60
     sim_cfg = sim_utils.SimulationCfg(
         device=args.device,
         dt=0.02,
@@ -203,8 +240,9 @@ def _run(args, simulation_app) -> int:
         robot_start_y=robot_start_y,
         spacing=args.terrain_size,
         material_style=args.material,
-        enable_cameras=args.enable_cameras,
+        enable_cameras=args.exroma_enable_cameras,
         terrain_seed=args.terrain_seed,
+        fix_dual_piper_root=args.skip_base_approach,
     )
     if args.command in {"collect", "evaluate"}:
         scene_cfg.dual_piper.actuators["arms"].effort_limit_sim = 100.0
@@ -254,7 +292,10 @@ def _run(args, simulation_app) -> int:
                 flush=True,
             )
     print("[EXROMA]: assembling rover and dual arms", flush=True)
-    assemble_dual_piper()
+    if args.skip_base_approach:
+        print("[EXROMA]: dual-arm root fixed at the manipulation pose", flush=True)
+    else:
+        assemble_dual_piper()
     _hide_pragyan_solar_panel(get_current_stage(), Usd, UsdGeom, UsdPhysics)
     sim.reset()
     _write_articulation_defaults(rover=scene["rover"], robot=scene["dual_piper"])
@@ -276,7 +317,7 @@ def _run(args, simulation_app) -> int:
     joint_targets = robot.data.default_joint_pos.clone()
     initial_state = scene.get_state(is_relative=False)
     cameras = {}
-    if args.enable_cameras:
+    if args.exroma_enable_cameras:
         cameras = {
             "mast": scene["mast_camera"],
             "front_left": scene["front_left_camera"],
@@ -300,6 +341,8 @@ def _run(args, simulation_app) -> int:
             if args.max_steps is not None and steps >= args.max_steps:
                 break
         return 0
+
+    import torch
 
     from exroma_bench.recording import MobileAlohaEpisodeRecorder
     from exroma_bench.tasks.beat_block_hammer import (
@@ -334,6 +377,8 @@ def _run(args, simulation_app) -> int:
         TABLE_LENGTH,
         TABLE_WIDTH,
     )
+    if args.skip_base_approach:
+        _relax_base_settle_gates(controller)
 
     base_controller = BasePoseApproachController(
         rover,
@@ -343,6 +388,7 @@ def _run(args, simulation_app) -> int:
     rng = random.Random(args.seed)
     prompt_rng = random.Random(args.seed + 104729)
     target_attempts = args.attempts if args.command == "collect" else args.episodes
+    all_env_ids = torch.arange(scene.num_envs, device=scene.device, dtype=torch.int32)
     output_dir = args.output or (
         PROJECT_ROOT
         / ("datasets" if args.command == "collect" else "evaluations")
@@ -400,7 +446,7 @@ def _run(args, simulation_app) -> int:
 
     def reset_attempt() -> None:
         nonlocal current_sample, current_prompt, current_prompt_index, current_prompt_source
-        scene.reset_to(initial_state, is_relative=False)
+        scene.reset_to(initial_state, env_ids=all_env_ids, is_relative=False)
         scene.reset()
         joint_targets.copy_(robot.data.default_joint_pos)
         controller.joint_targets = joint_targets
@@ -414,7 +460,10 @@ def _run(args, simulation_app) -> int:
             current_prompt, current_prompt_index, current_prompt_source = sample_task_prompt(
                 args.task, prompt_rng
             )
-        base_controller.reset()
+        if args.skip_base_approach:
+            base_controller.complete()
+        else:
+            base_controller.reset()
         if recorder is not None:
             recorder.start(
                 metadata={
@@ -503,7 +552,10 @@ def _run(args, simulation_app) -> int:
             if recorder is not None:
                 recorder.finish(success=True)
         elif recorder is not None:
-            recorder.discard()
+            if args.keep_failed_recordings:
+                recorder.finish(success=False)
+            else:
+                recorder.discard()
         records.append(
             {
                 "attempt": attempts,
@@ -533,7 +585,10 @@ def _run(args, simulation_app) -> int:
             reset_attempt()
 
     if recorder is not None and recorder.is_recording:
-        recorder.discard()
+        if args.keep_failed_recordings:
+            recorder.finish(success=False)
+        else:
+            recorder.discard()
     print(
         f"[EXROMA][DONE]: successes={successes}, attempts={attempts}, "
         f"success_rate={successes / attempts if attempts else 0.0:.3f}",
@@ -567,6 +622,8 @@ def _run_remote_policy_evaluation(
     import time
     from collections import deque
 
+    import torch
+
     from exroma_bench.policy.client import RemotePolicyClient
     from exroma_bench.policy.sim_codec import DualPiperPolicyCodec, PolicyTaskMonitor
     from exroma_bench.recording import MobileAlohaEpisodeRecorder
@@ -580,6 +637,7 @@ def _run_remote_policy_evaluation(
     records: list[dict[str, object]] = []
     successes = 0
     attempts = 0
+    all_env_ids = torch.arange(scene.num_envs, device=scene.device, dtype=torch.int32)
     recorder = None
     if args.record_policy_video:
         recorder = MobileAlohaEpisodeRecorder(
@@ -614,7 +672,7 @@ def _run_remote_policy_evaluation(
             flush=True,
         )
         while simulation_app.is_running() and attempts < target_episodes:
-            scene.reset_to(initial_state, is_relative=False)
+            scene.reset_to(initial_state, env_ids=all_env_ids, is_relative=False)
             scene.reset()
             joint_targets.copy_(robot.data.default_joint_pos)
             controller.joint_targets = joint_targets
@@ -829,6 +887,38 @@ def _create_controller(
         hammer_controller_type(robot, joint_targets, hammer, block, None, cfg),
         {"robotwin_hammer": hammer, "hammer_block": block},
     )
+
+
+def _relax_base_settle_gates(controller) -> None:
+    configs = []
+    for step in getattr(controller, "steps", ()):
+        cfg = getattr(step, "cfg", None)
+        if cfg is not None:
+            configs.append(cfg)
+    for worker in getattr(controller, "workers", {}).values():
+        cfg = getattr(worker, "cfg", None)
+        if cfg is not None:
+            configs.append(cfg)
+    for attr_name in ("object_worker",):
+        worker = getattr(controller, attr_name, None)
+        cfg = getattr(worker, "cfg", None)
+        if cfg is not None:
+            configs.append(cfg)
+    for cfg in configs:
+        if hasattr(cfg, "base_settle_linear_velocity"):
+            cfg.base_settle_linear_velocity = max(cfg.base_settle_linear_velocity, 10.0)
+        if hasattr(cfg, "base_settle_angular_velocity"):
+            cfg.base_settle_angular_velocity = max(cfg.base_settle_angular_velocity, 10.0)
+        if hasattr(cfg, "base_stable_steps"):
+            cfg.base_stable_steps = 0
+        if hasattr(cfg, "settle_time"):
+            cfg.settle_time = 0.0
+        if hasattr(cfg, "base_settle_timeout"):
+            cfg.base_settle_timeout = max(cfg.base_settle_timeout, 30.0)
+        if hasattr(cfg, "max_execution_base_translation"):
+            cfg.max_execution_base_translation = max(cfg.max_execution_base_translation, 1.0)
+        if hasattr(cfg, "max_execution_base_rotation"):
+            cfg.max_execution_base_rotation = max(cfg.max_execution_base_rotation, 3.14159)
 
 
 def _write_summary(

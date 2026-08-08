@@ -76,6 +76,13 @@ class BasePoseApproachController:
         self.failure_reason = ""
         self.position_reached = False
 
+    def complete(self) -> None:
+        self.state = "done"
+        self.elapsed = 0.0
+        self.stable_steps = 0
+        self.failure_reason = ""
+        self.position_reached = True
+
     def base_command(self) -> tuple[float, float]:
         if not self.is_active:
             return 0.0, 0.0
