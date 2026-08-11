@@ -93,7 +93,7 @@ conda activate openspace
   --policy-host 127.0.0.1 \
   --policy-port 8000 \
   --policy-frequency 10 \
-  --policy-action-horizon 8 \
+  --policy-action-horizon 16 \
   --headless
 ```
 
@@ -144,15 +144,19 @@ TERM=xterm ./exroma.sh evaluate \
   --policy-host 127.0.0.1 \
   --policy-port 8000 \
   --policy-frequency 10 \
-  --policy-action-horizon 8 \
+  --policy-action-horizon 16 \
   --record-policy-video \
+  --record-policy-video-limit 1 \
+  --policy-video-max-seconds 60 \
+  --policy-video-only \
   --record-fps 10 \
   --output evaluations/replay_stack_blocks_two_episode_000000 \
   --headless
 ```
 
-The output directory receives `episode_000000.hdf5`, a three-view
-`episode_000000.mp4`, and `collection_summary.json`. Remote-policy evaluation
+With the video options above, the output directory receives one three-view
+`episode_000000.mp4` capped at 60 seconds and `collection_summary.json`. The
+temporary HDF5 used for video export is removed. Remote-policy evaluation
 videos are retained whether the replay succeeds or fails, because they are
 diagnostic artifacts rather than demonstration data.
 

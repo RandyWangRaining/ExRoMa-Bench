@@ -95,14 +95,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--policy-action-horizon",
         type=int,
-        default=8,
+        default=16,
         help="Maximum number of returned actions consumed from each policy query.",
     )
     parser.add_argument("--policy-jpeg-quality", type=int, default=85)
     parser.add_argument(
         "--record-policy-video",
         action="store_true",
-        help="Save HDF5 and a three-view MP4 for every remote-policy evaluation episode.",
+        help="Record three-view video during remote-policy evaluation.",
+    )
+    parser.add_argument(
+        "--record-policy-video-limit",
+        type=int,
+        help="Maximum number of remote-policy episodes to record; defaults to all episodes.",
+    )
+    parser.add_argument(
+        "--policy-video-max-seconds",
+        type=float,
+        help="Stop each policy video after this many simulated seconds without stopping evaluation.",
+    )
+    parser.add_argument(
+        "--policy-video-only",
+        action="store_true",
+        help="Delete the temporary episode HDF5 after successfully exporting its MP4.",
     )
     AppLauncher.add_app_launcher_args(parser)
     return parser
@@ -145,6 +160,16 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--policy-jpeg-quality must be between 1 and 100")
     if args.record_policy_video and not args.policy_host:
         parser.error("--record-policy-video requires --policy-host")
+    if args.record_policy_video_limit is not None and args.record_policy_video_limit <= 0:
+        parser.error("--record-policy-video-limit must be positive")
+    if args.policy_video_max_seconds is not None and args.policy_video_max_seconds <= 0.0:
+        parser.error("--policy-video-max-seconds must be positive")
+    if (
+        args.record_policy_video_limit is not None
+        or args.policy_video_max_seconds is not None
+        or args.policy_video_only
+    ) and not args.record_policy_video:
+        parser.error("policy video options require --record-policy-video")
     automatic = args.command in {"collect", "evaluate"}
     remote_policy_evaluation = args.command == "evaluate" and bool(args.policy_host)
     if automatic and not remote_policy_evaluation:
@@ -656,6 +681,7 @@ def _run_remote_policy_evaluation(
             format_name=f"exroma.remote_policy_replay.{args.task}.v1",
             joint_encoding=MobileAlohaEpisodeRecorder.DUAL_PIPER_COMPACT_ENCODING,
             export_video=True,
+            keep_hdf5=not args.policy_video_only,
         )
     record_cameras = {
         "mast": cameras["cam_high"],
@@ -705,7 +731,11 @@ def _run_remote_policy_evaluation(
 
             client.reset()
             monitor.reset()
-            if recorder is not None:
+            record_this_episode = recorder is not None and (
+                args.record_policy_video_limit is None
+                or attempts < args.record_policy_video_limit
+            )
+            if record_this_episode:
                 recorder.start(
                     metadata={
                         "benchmark": "ExRoMa-Bench",
@@ -760,7 +790,7 @@ def _run_remote_policy_evaluation(
                     sim.step()
                     scene.update(sim_dt)
                     episode_time += sim_dt
-                    if recorder is not None:
+                    if recorder is not None and recorder.is_recording:
                         recorder.capture(
                             sim_time=episode_time,
                             robot=robot,
@@ -770,6 +800,11 @@ def _run_remote_policy_evaluation(
                             cameras=record_cameras,
                             objects=record_objects,
                         )
+                        if (
+                            args.policy_video_max_seconds is not None
+                            and episode_time >= args.policy_video_max_seconds
+                        ):
+                            recorder.finish(success=False)
                     monitor.update(sim_dt)
                     if monitor.is_terminal or not simulation_app.is_running():
                         break
@@ -783,7 +818,7 @@ def _run_remote_policy_evaluation(
             succeeded = bool(monitor.succeeded)
             successes += int(succeeded)
             failure_reason = "" if succeeded else monitor.failure_reason
-            if recorder is not None:
+            if recorder is not None and recorder.is_recording:
                 recorder.finish(success=succeeded)
             records.append(
                 {

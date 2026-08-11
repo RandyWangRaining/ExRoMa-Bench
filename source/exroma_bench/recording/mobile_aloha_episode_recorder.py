@@ -36,6 +36,7 @@ class MobileAlohaEpisodeRecorder:
         format_name: str | None = None,
         joint_encoding: str = "raw",
         export_video: bool = True,
+        keep_hdf5: bool = True,
     ) -> None:
         self.output_dir = Path(output_dir).expanduser().resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -44,6 +45,9 @@ class MobileAlohaEpisodeRecorder:
         self.task_instruction = task_instruction
         self.format_name = format_name or self.FORMAT_VERSION
         self.export_video = bool(export_video)
+        self.keep_hdf5 = bool(keep_hdf5)
+        if not self.keep_hdf5 and not self.export_video:
+            raise ValueError("keep_hdf5=False requires export_video=True")
         if joint_encoding not in {"raw", self.DUAL_PIPER_COMPACT_ENCODING}:
             raise ValueError(f"Unsupported joint encoding: {joint_encoding}")
         self.joint_encoding = joint_encoding
@@ -68,10 +72,11 @@ class MobileAlohaEpisodeRecorder:
 
     def _next_episode_index(self) -> int:
         indices = []
-        for path in self.output_dir.glob("episode_*.hdf5"):
-            suffix = path.stem.removeprefix("episode_").split("_")[0]
-            if suffix.isdigit():
-                indices.append(int(suffix))
+        for pattern in ("episode_*.hdf5", "episode_*.mp4"):
+            for path in self.output_dir.glob(pattern):
+                suffix = path.stem.removeprefix("episode_").split("_")[0]
+                if suffix.isdigit():
+                    indices.append(int(suffix))
         return max(indices, default=-1) + 1
 
     def start(
@@ -302,6 +307,7 @@ class MobileAlohaEpisodeRecorder:
         self._temp_path.replace(self._episode_path)
         output_path = self._episode_path
         self._clear_paths()
+        video_path = None
         if self.export_video:
             try:
                 video_path = export_three_view_video(output_path, overwrite=True)
@@ -311,6 +317,10 @@ class MobileAlohaEpisodeRecorder:
                     f"[WARN]: Could not create three-view video for {output_path}: {exc}",
                     flush=True,
                 )
+        if video_path is not None and not self.keep_hdf5:
+            output_path.unlink(missing_ok=True)
+            print(f"[RECORD]: Removed temporary episode HDF5 -> {output_path}", flush=True)
+            return video_path
         return output_path
 
     def _add_robotwin_compatibility_links(self) -> None:

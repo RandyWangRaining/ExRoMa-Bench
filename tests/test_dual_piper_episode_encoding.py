@@ -67,6 +67,31 @@ def test_episode_instruction_can_be_overridden_per_episode(tmp_path):
         assert episode.attrs["task_instruction"] == "episode instruction"
 
 
+def test_video_only_recording_removes_hdf5_after_export(tmp_path, monkeypatch):
+    recorder = MobileAlohaEpisodeRecorder(tmp_path, keep_hdf5=False)
+    output_path = recorder.start(
+        metadata={},
+        joint_names=["joint"],
+        camera_names=[],
+    )
+
+    def fake_export(episode_path, *, overwrite):
+        assert overwrite is True
+        video_path = episode_path.with_suffix(".mp4")
+        video_path.write_bytes(b"video")
+        return video_path
+
+    monkeypatch.setattr(
+        "exroma_bench.recording.mobile_aloha_episode_recorder.export_three_view_video",
+        fake_export,
+    )
+    result = recorder.finish(success=False)
+
+    assert result == tmp_path / "episode_000000.mp4"
+    assert result.is_file()
+    assert not output_path.exists()
+
+
 def test_robotwin_compatibility_paths_are_hard_links(tmp_path):
     recorder = MobileAlohaEpisodeRecorder(tmp_path)
     recorder.start(metadata={}, joint_names=["joint"], camera_names=[])
