@@ -983,7 +983,13 @@ class CuroboArticulatedMechanismController:
 
 
 def _stack_two_controller(
-    robot, joint_targets, scene, geom, *, strict_collision_check: bool = False
+    robot,
+    joint_targets,
+    scene,
+    geom,
+    *,
+    strict_collision_check: bool = False,
+    planner_enabled: bool = True,
 ):
     tx, ty, tz, tl, tw = geom
     # RoboTwin's robot faces +Y, while this rover faces -Y at the table. Mirror
@@ -1023,6 +1029,7 @@ def _stack_two_controller(
             )
         )
         steps[-1].cfg.grasp_center_z_offset = 0.008
+        steps[-1].cfg.planner_enabled = planner_enabled
         steps[-1].cfg.planner_table_z_offset = -0.012
         steps[-1].cfg.grasp_pose_stabilization = True
         steps[-1].cfg.stabilize_during_release = True
@@ -1103,7 +1110,13 @@ def _stack_two_controller(
 
 
 def _handover_controller(
-    robot, joint_targets, scene, geom, *, strict_collision_check: bool = False
+    robot,
+    joint_targets,
+    scene,
+    geom,
+    *,
+    strict_collision_check: bool = False,
+    planner_enabled: bool = True,
 ):
     tx, ty, tz, tl, tw = geom
     name = "benchmark_handover_block"
@@ -1144,6 +1157,8 @@ def _handover_controller(
         closed_gripper=0.011,
         strict_collision_check=strict_collision_check,
     )
+    first_cfg.planner_enabled = planner_enabled
+    second_cfg.planner_enabled = planner_enabled
     # The two grippers use vertically separated contact bands on the long block
     # so they can overlap in time without occupying the same end-effector pose.
     first_cfg.grasp_center_z_offset = 0.055
@@ -1179,7 +1194,13 @@ def _handover_controller(
 
 
 def _scan_object_controller(
-    robot, joint_targets, scene, geom, *, strict_collision_check: bool = False
+    robot,
+    joint_targets,
+    scene,
+    geom,
+    *,
+    strict_collision_check: bool = False,
+    planner_enabled: bool = True,
 ):
     """Reproduce RoboTwin's two-arm scanner and tea-box alignment task."""
 
@@ -1248,6 +1269,8 @@ def _scan_object_controller(
         closed_gripper=0.012,
         strict_collision_check=strict_collision_check,
     )
+    scanner_cfg.planner_enabled = planner_enabled
+    object_cfg.planner_enabled = planner_enabled
     object_cfg.grasp_center_offset_object = (0.0, 0.0, 0.04545)
     object_cfg.grasp_approach_mode = "top_down"
     object_cfg.top_down_approach_tilt_deg = 8.0
@@ -1331,7 +1354,13 @@ def _scan_object_controller(
 
 
 def _scan_rock_controller(
-    robot, joint_targets, scene, geom, *, strict_collision_check: bool = False
+    robot,
+    joint_targets,
+    scene,
+    geom,
+    *,
+    strict_collision_check: bool = False,
+    planner_enabled: bool = True,
 ):
     """Pick the scanner and aim its scan ray at a scaled OmniLRS ground rock."""
 
@@ -1358,6 +1387,7 @@ def _scan_rock_controller(
         closed_gripper=0.016,
         strict_collision_check=strict_collision_check,
     )
+    scanner_cfg.planner_enabled = planner_enabled
     scanner_cfg.grasp_center_offset_object = (0.0, 0.01159, 0.04867)
     scanner_cfg.fixed_grasp_approach_axis_w = (
         0.0,
@@ -1735,6 +1765,7 @@ def create_benchmark_controller(
     table_width: float,
     switch_variant: str = "100880",
     strict_collision_check: bool = False,
+    planner_enabled: bool = True,
 ):
     geometry = (table_x, table_y, table_height, table_length, table_width)
     builders = {
@@ -1748,6 +1779,15 @@ def create_benchmark_controller(
     }
     if task_name not in builders:
         raise ValueError(f"Unsupported RoboTwin benchmark task: {task_name}")
+    if task_name in {"stack_blocks_two", "handover_block", "scan_object", "scan_rock"}:
+        return builders[task_name](
+            robot,
+            joint_targets,
+            scene,
+            geometry,
+            strict_collision_check=strict_collision_check,
+            planner_enabled=planner_enabled,
+        )
     if task_name == "turn_switch":
         return builders[task_name](
             robot,

@@ -146,7 +146,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.record_policy_video and not args.policy_host:
         parser.error("--record-policy-video requires --policy-host")
     automatic = args.command in {"collect", "evaluate"}
-    if automatic:
+    remote_policy_evaluation = args.command == "evaluate" and bool(args.policy_host)
+    if automatic and not remote_policy_evaluation:
         _preload_curobo()
     args.enable_cameras = bool(args.command == "collect" or args.policy_host)
     args.exroma_enable_cameras = args.enable_cameras
@@ -859,6 +860,7 @@ def _create_controller(
             table_length=table_length,
             table_width=table_width,
             strict_collision_check=args.strict_collision_check,
+            planner_enabled=not bool(args.policy_host),
         )
         return controller, benchmark_record_objects(scene, args.task)
     if args.task == "test_tube_rack":
@@ -877,6 +879,7 @@ def _create_controller(
             robot_config_stem="dual_piper",
             align_base=False,
             planner_self_collision_check=args.strict_collision_check,
+            planner_enabled=not bool(args.policy_host),
         )
         return tube_controller_type(robot, joint_targets, target, cfg), {"test_tube": target}
     hammer = scene["robotwin_hammer"]
@@ -889,6 +892,7 @@ def _create_controller(
         table_length=table_length,
         table_width=table_width,
         planner_self_collision_check=args.strict_collision_check,
+        planner_enabled=not bool(args.policy_host),
     )
     return (
         hammer_controller_type(robot, joint_targets, hammer, block, None, cfg),

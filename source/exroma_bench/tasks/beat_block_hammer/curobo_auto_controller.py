@@ -37,6 +37,7 @@ class CuroboBeatBlockHammerConfig:
     planner_position_threshold: float = 0.01
     planner_rotation_threshold: float = 0.08
     planner_self_collision_check: bool = False
+    planner_enabled: bool = True
     block_x_range: tuple[float, float] = (-0.25, 0.25)
     block_y_range: tuple[float, float] = (-0.05, 0.15)
     block_half_size: float = 0.025
@@ -210,7 +211,7 @@ class CuroboBeatBlockHammerController:
                 f"arm={arm_joint_names}, gripper={gripper_joint_names}"
             )
 
-        if arm not in self.planners:
+        if self.cfg.planner_enabled and arm not in self.planners:
             try:
                 self.planners[arm] = self._make_planner(arm)
             except torch.OutOfMemoryError:
@@ -230,7 +231,7 @@ class CuroboBeatBlockHammerController:
         self.arm_joint_names = list(arm_joint_names)
         self.gripper_joint_ids = list(gripper_joint_ids)
         self.gripper_joint_names = list(gripper_joint_names)
-        self.planner = self.planners[arm]
+        self.planner = self.planners.get(arm)
 
     def _set_gripper(self, opening: float) -> None:
         if len(self.gripper_joint_ids) != 2:

@@ -47,6 +47,7 @@ class CuroboAutoPickPlaceConfig:
     planner_rotation_threshold: float = 0.05
     planner_enable_finetune_trajopt: bool = True
     planner_self_collision_check: bool = False
+    planner_enabled: bool = True
     planner_table_z_offset: float = 0.0
     align_base: bool = True
     spawn_x_range: tuple[float, float] = (-0.08, 0.10)
@@ -155,16 +156,18 @@ class CuroboAutoPickPlaceController:
             table_pos_w,
             table_quat_w,
         )
-        self.planner = MobileAlohaCuroboPlanner(
-            cfg.arm,
-            table_center_b=table_pos_b[0].detach().cpu().tolist(),
-            table_quat_b=table_quat_b[0].detach().cpu().tolist(),
-            table_dims=[cfg.table_length, cfg.table_width, 0.06],
-            robot_config_stem=cfg.robot_config_stem,
-            position_threshold=cfg.planner_position_threshold,
-            rotation_threshold=cfg.planner_rotation_threshold,
-            self_collision_check=cfg.planner_self_collision_check,
-        )
+        self.planner = None
+        if cfg.planner_enabled:
+            self.planner = MobileAlohaCuroboPlanner(
+                cfg.arm,
+                table_center_b=table_pos_b[0].detach().cpu().tolist(),
+                table_quat_b=table_quat_b[0].detach().cpu().tolist(),
+                table_dims=[cfg.table_length, cfg.table_width, 0.06],
+                robot_config_stem=cfg.robot_config_stem,
+                position_threshold=cfg.planner_position_threshold,
+                rotation_threshold=cfg.planner_rotation_threshold,
+                self_collision_check=cfg.planner_self_collision_check,
+            )
 
         self.state = "idle"
         self.state_elapsed = 0.0
