@@ -48,7 +48,12 @@ class Pi05PolicyAdapter:
         self.action_steps = int(self.config.get("action_steps", 50))
         if self.action_steps <= 0:
             raise ValueError("pi05 action_steps must be positive.")
-        self.backend = create_backend(self.config)
+        if self.config.get("backend_factory"):
+            self.backend = create_backend(self.config)
+        else:
+            from .openpi_backend import OpenPIExRoMaBackend
+
+            self.backend = OpenPIExRoMaBackend(self.config)
 
     def infer(self, observation: dict[str, Any]) -> Any:
         encoded = encode_observation(observation)

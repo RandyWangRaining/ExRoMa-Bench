@@ -12,6 +12,7 @@ camera_names:
   - cam_left_wrist
 
 # OpenPI deployment settings.
-action_steps: 50
+action_steps: 16
+action_horizon: 16
 train_config_name: pi05_base_exroma_lora
 checkpoint_id: null

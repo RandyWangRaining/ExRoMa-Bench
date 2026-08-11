@@ -68,6 +68,21 @@ Checkpoints are written to
 single task, replace `--tasks all` in both commands with one task directory
 name. Use `--resume` instead of `--overwrite` to continue an interrupted run.
 
+Serve an ExRoMa checkpoint through the native 16-D policy protocol with:
+
+```bash
+CUDA_VISIBLE_DEVICES=1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.55 \
+policy/pi05/openpi/.venv/bin/python scripts/serve_policy.py \
+  --policy-name pi05 \
+  --checkpoint policy/pi05/openpi/checkpoints/pi05_base_exroma_lora/<exp-name>/<step> \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+For JAX checkpoints, select the inference GPU with `CUDA_VISIBLE_DEVICES`; the
+`--device` server argument is only meaningful for backends that select their
+device after process startup.
+
 ## Conda alternative
 
 1. Create the bridge environment and install ExRoMa's protocol package:
