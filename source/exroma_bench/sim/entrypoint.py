@@ -930,7 +930,14 @@ def _create_controller(
         planner_enabled=not bool(args.policy_host),
     )
     return (
-        hammer_controller_type(robot, joint_targets, hammer, block, None, cfg),
+        hammer_controller_type(
+            robot,
+            joint_targets,
+            hammer,
+            block,
+            scene["hammer_contact_sensor"],
+            cfg,
+        ),
         {"robotwin_hammer": hammer, "hammer_block": block},
     )
 

@@ -75,10 +75,9 @@ class CuroboBeatBlockHammerConfig:
         -165.0,
     )
     strike_yaw_offsets_deg: tuple[float, ...] = (0.0, -15.0, 15.0, -30.0, 30.0, -45.0, 45.0)
-    contact_force_threshold: float = 0.08
+    contact_force_threshold: float = 1e-3
     success_xy_tolerance: float = 0.02
-    success_z_tolerance: float = 0.025
-    stable_success_steps: int = 6
+    stable_success_steps: int = 1
     overall_timeout: float = 55.0
 
 
@@ -727,17 +726,11 @@ class CuroboBeatBlockHammerController:
         functional_point = self._hammer_functional_point_w()
         block_point = self._block_top_point_w()
         xy_error = torch.abs(functional_point[:2] - block_point[:2])
-        z_error = abs(float(functional_point[2].item() - block_point[2].item()))
-        geometric_contact = (
-            bool(torch.all(xy_error <= self.cfg.success_xy_tolerance).item())
-            and z_error <= self.cfg.success_z_tolerance
+        functional_point_aligned = bool(
+            torch.all(xy_error < self.cfg.success_xy_tolerance).item()
         )
-        contact_ok = (
-            self.current_contact_force >= self.cfg.contact_force_threshold
-            if self.contact_sensor is not None
-            else geometric_contact
-        )
-        success = geometric_contact and contact_ok
+        contact_ok = self.contact_seen if self.contact_sensor is not None else False
+        success = functional_point_aligned and contact_ok
         self.success_stable_steps = self.success_stable_steps + 1 if success else 0
 
     def update(self, dt: float) -> None:

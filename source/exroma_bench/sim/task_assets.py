@@ -6,6 +6,7 @@ import math
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
+from isaaclab.sensors import ContactSensorCfg
 
 from exroma_bench.paths import asset_path
 
@@ -175,6 +176,7 @@ def add_beat_block_hammer(
         spawn=sim_utils.UsdFileCfg(
             usd_path=asset_path("usd/robotwin/020_hammer/hammer.usd").as_posix(),
             scale=(0.079, 0.079, 0.079),
+            activate_contact_sensors=True,
             collision_props=sim_utils.CollisionPropertiesCfg(
                 contact_offset=0.003,
                 rest_offset=0.0,
@@ -202,6 +204,7 @@ def add_beat_block_hammer(
         prim_path="{ENV_REGEX_NS}/hammer_block",
         spawn=sim_utils.CuboidCfg(
             size=(2.0 * block_half,) * 3,
+            activate_contact_sensors=True,
             collision_props=sim_utils.CollisionPropertiesCfg(
                 contact_offset=0.003,
                 rest_offset=0.0,
@@ -224,4 +227,9 @@ def add_beat_block_hammer(
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(block_x, block_y, table_height + block_half),
         ),
+    )
+    scene_cfg.hammer_contact_sensor = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/robotwin_hammer",
+        update_period=0.0,
+        filter_prim_paths_expr=["{ENV_REGEX_NS}/hammer_block"],
     )
