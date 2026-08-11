@@ -818,28 +818,36 @@ def _run_remote_policy_evaluation(
             succeeded = bool(monitor.succeeded)
             successes += int(succeeded)
             failure_reason = "" if succeeded else monitor.failure_reason
+            diagnostics_fn = getattr(controller, "success_diagnostics", None)
+            success_diagnostics = diagnostics_fn() if callable(diagnostics_fn) else None
             if recorder is not None and recorder.is_recording:
                 recorder.finish(success=succeeded)
-            records.append(
-                {
-                    "attempt": attempts,
-                    "success": succeeded,
-                    "failure_reason": failure_reason,
-                    "sample": sample,
-                    "prompt": prompt,
-                    "prompt_index": prompt_index,
-                    "prompt_source": prompt_source,
-                    "policy_queries": query_count,
-                    "episode_steps": monitor.steps,
-                    "episode_time_s": monitor.elapsed,
-                    "mean_round_trip_ms": (
-                        sum(round_trip_ms) / len(round_trip_ms) if round_trip_ms else None
-                    ),
-                    "mean_server_infer_ms": (
-                        sum(server_infer_ms) / len(server_infer_ms) if server_infer_ms else None
-                    ),
-                }
-            )
+            record = {
+                "attempt": attempts,
+                "success": succeeded,
+                "failure_reason": failure_reason,
+                "sample": sample,
+                "prompt": prompt,
+                "prompt_index": prompt_index,
+                "prompt_source": prompt_source,
+                "policy_queries": query_count,
+                "episode_steps": monitor.steps,
+                "episode_time_s": monitor.elapsed,
+                "mean_round_trip_ms": (
+                    sum(round_trip_ms) / len(round_trip_ms) if round_trip_ms else None
+                ),
+                "mean_server_infer_ms": (
+                    sum(server_infer_ms) / len(server_infer_ms) if server_infer_ms else None
+                ),
+            }
+            if success_diagnostics is not None:
+                record["success_diagnostics"] = success_diagnostics
+                print(
+                    "[EXROMA][POLICY][SUCCESS-DIAGNOSTICS]: "
+                    + ", ".join(f"{key}={value}" for key, value in success_diagnostics.items()),
+                    flush=True,
+                )
+            records.append(record)
             _write_summary(
                 output_dir,
                 args,

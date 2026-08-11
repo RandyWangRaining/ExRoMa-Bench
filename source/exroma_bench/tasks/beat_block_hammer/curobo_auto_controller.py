@@ -76,7 +76,9 @@ class CuroboBeatBlockHammerConfig:
     )
     strike_yaw_offsets_deg: tuple[float, ...] = (0.0, -15.0, 15.0, -30.0, 30.0, -45.0, 45.0)
     contact_force_threshold: float = 1e-3
-    success_xy_tolerance: float = 0.02
+    # The converted Isaac Sim collision hull reaches about 3.2 cm beyond the
+    # RoboTwin/SAPIEN functional-point center during a valid face strike.
+    success_xy_tolerance: float = 0.04
     stable_success_steps: int = 1
     overall_timeout: float = 55.0
 
@@ -122,6 +124,9 @@ class CuroboBeatBlockHammerController:
         self.initial_hammer_z = 0.0
         self.contact_seen = False
         self.current_contact_force = 0.0
+        self.max_contact_force = 0.0
+        self.min_functional_xy_error = math.inf
+        self.min_contact_xy_error = math.inf
         self.success_stable_steps = 0
         self.base_stable_steps = 0
         self.failure_reason = ""
@@ -303,6 +308,9 @@ class CuroboBeatBlockHammerController:
         self.trajectory_base_quat_w = None
         self.contact_seen = False
         self.current_contact_force = 0.0
+        self.max_contact_force = 0.0
+        self.min_functional_xy_error = math.inf
+        self.min_contact_xy_error = math.inf
         self.success_stable_steps = 0
         self.base_stable_steps = 0
         self.failure_reason = ""
@@ -675,6 +683,7 @@ class CuroboBeatBlockHammerController:
         self.current_contact_force = float(
             torch.linalg.vector_norm(force_matrix, dim=-1).max().item()
         )
+        self.max_contact_force = max(self.max_contact_force, self.current_contact_force)
         if self.current_contact_force >= self.cfg.contact_force_threshold:
             self.contact_seen = True
 
@@ -726,12 +735,41 @@ class CuroboBeatBlockHammerController:
         functional_point = self._hammer_functional_point_w()
         block_point = self._block_top_point_w()
         xy_error = torch.abs(functional_point[:2] - block_point[:2])
+        max_xy_error = float(torch.max(xy_error).item())
+        self.min_functional_xy_error = min(self.min_functional_xy_error, max_xy_error)
+        if self.current_contact_force >= self.cfg.contact_force_threshold:
+            self.min_contact_xy_error = min(self.min_contact_xy_error, max_xy_error)
         functional_point_aligned = bool(
             torch.all(xy_error < self.cfg.success_xy_tolerance).item()
         )
-        contact_ok = self.contact_seen if self.contact_sensor is not None else False
+        contact_ok = (
+            self.current_contact_force >= self.cfg.contact_force_threshold
+            if self.contact_sensor is not None
+            else False
+        )
         success = functional_point_aligned and contact_ok
         self.success_stable_steps = self.success_stable_steps + 1 if success else 0
+
+    def success_diagnostics(self) -> dict[str, bool | float | None]:
+        """Return compact policy-evaluation diagnostics for this episode."""
+        functional_point = self._hammer_functional_point_w()
+        block_point = self._block_top_point_w()
+        error = functional_point - block_point
+        return {
+            "contact_seen": self.contact_seen,
+            "max_contact_force_n": self.max_contact_force,
+            "min_functional_xy_error_m": (
+                self.min_functional_xy_error
+                if math.isfinite(self.min_functional_xy_error)
+                else None
+            ),
+            "min_contact_xy_error_m": (
+                self.min_contact_xy_error if math.isfinite(self.min_contact_xy_error) else None
+            ),
+            "final_functional_error_x_m": float(error[0].item()),
+            "final_functional_error_y_m": float(error[1].item()),
+            "final_functional_error_z_m": float(error[2].item()),
+        }
 
     def update(self, dt: float) -> None:
         self._update_contact()
