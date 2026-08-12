@@ -665,6 +665,8 @@ def _run_remote_policy_evaluation(
     sim_dt = sim.get_physics_dt()
     control_steps = max(1, round(1.0 / (args.policy_frequency * sim_dt)))
     max_steps = args.max_steps or max(1, round(120.0 / sim_dt))
+    progress_interval_steps = max(1, round(1.0 / sim_dt))
+    max_episode_time = max_steps * sim_dt
     codec = DualPiperPolicyCodec(robot, rover)
     monitor = PolicyTaskMonitor(controller, args.task, max_steps=max_steps)
     records: list[dict[str, object]] = []
@@ -761,6 +763,13 @@ def _run_remote_policy_evaluation(
             round_trip_ms: list[float] = []
             server_infer_ms: list[float] = []
             policy_finished = False
+            episode_number = attempts + 1
+            next_progress_step = progress_interval_steps
+            print(
+                f"[EXROMA][POLICY][PROGRESS]: episode={episode_number}/{target_episodes}, "
+                f"step=0/{max_steps}, elapsed=0.0/{max_episode_time:.1f}s, status=RUNNING",
+                flush=True,
+            )
 
             while simulation_app.is_running() and not monitor.is_terminal:
                 if not action_queue:
@@ -806,6 +815,19 @@ def _run_remote_policy_evaluation(
                         ):
                             recorder.finish(success=False)
                     monitor.update(sim_dt)
+                    if (
+                        not monitor.is_terminal
+                        and monitor.steps >= next_progress_step
+                    ):
+                        print(
+                            f"[EXROMA][POLICY][PROGRESS]: "
+                            f"episode={episode_number}/{target_episodes}, "
+                            f"step={monitor.steps}/{max_steps}, "
+                            f"elapsed={monitor.elapsed:.1f}/{max_episode_time:.1f}s, "
+                            "status=RUNNING",
+                            flush=True,
+                        )
+                        next_progress_step += progress_interval_steps
                     if monitor.is_terminal or not simulation_app.is_running():
                         break
                 if policy_finished and not action_queue and not monitor.is_terminal:
@@ -818,6 +840,15 @@ def _run_remote_policy_evaluation(
             succeeded = bool(monitor.succeeded)
             successes += int(succeeded)
             failure_reason = "" if succeeded else monitor.failure_reason
+            result_status = "SUCCESS" if succeeded else "FAILURE"
+            result_reason = failure_reason or "success criteria satisfied"
+            print(
+                f"[EXROMA][POLICY][RESULT]: episode={attempts}/{target_episodes}, "
+                f"status={result_status}, step={monitor.steps}/{max_steps}, "
+                f"elapsed={monitor.elapsed:.1f}/{max_episode_time:.1f}s, "
+                f"reason={result_reason}",
+                flush=True,
+            )
             diagnostics_fn = getattr(controller, "success_diagnostics", None)
             success_diagnostics = diagnostics_fn() if callable(diagnostics_fn) else None
             if recorder is not None and recorder.is_recording:
